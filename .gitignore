@@ -1,0 +1,13 @@
+# Maven build output
+backend/target/
+
+# Local editor and operating system files
+.idea/
+.vscode/
+*.iml
+Thumbs.db
+
+# Local secrets, when we add configuration later
+.env
+.env.*
+!.env.example

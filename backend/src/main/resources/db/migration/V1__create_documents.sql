@@ -1,0 +1,5 @@
+CREATE TABLE documents (
+    id UUID PRIMARY KEY,
+    title VARCHAR(200) NOT NULL CHECK (length(trim(title)) > 0),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

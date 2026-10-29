@@ -4,7 +4,7 @@
 
 We added an `app_users` table and a **local-development-only provisioning endpoint**. The temporary `learner` account from Lesson 8 can create an account with an email address and password. The backend stores a BCrypt password hash in PostgreSQL and returns only the account ID, normalized email and creation time.
 
-**The new account cannot log in yet.** Spring Security still authenticates the temporary `learner` account. Connecting login to database users is Lesson 10. This is a controlled learning step, not public registration or a production-ready identity service.
+At the Lesson 9 checkpoint, the new account could not log in. [Lesson 10](10-login-with-a-session.md) now connects stored users to authentication. Provisioning remains a controlled local-development step, not public registration or a production-ready identity service.
 
 ## 2. The problem, with an example
 
@@ -108,7 +108,7 @@ mvn -B test
 
 The integration test uses the separate test database. It verifies: migration V2, anonymous and missing-CSRF rejection, authenticated creation, normalized email, no password in the response, BCrypt verification of the stored hash, incorrect-password mismatch, invalid email and passwords, and two simultaneous requests for the same email producing one 201 and one 409. It deletes its own test account. The full run reported **4 tests passed, 0 failures**. Without the opt-in variable, database integration tests are skipped.
 
-The development database was also migrated and a temporary test account was created and removed. This proves local provisioning; it does not prove database-backed login, which remains Lesson 10.
+The development database was also migrated and a temporary test account was created and removed. Lesson 10 separately verifies database-backed login.
 
 ## 7. Common mistakes
 
@@ -117,7 +117,7 @@ The development database was also migrated and a temporary test account was crea
 | 401 or 403 | Log in as `learner`, keep the same session and fetch a new CSRF token after login. |
 | 409 | This normalized email already exists in the development database. |
 | 400 | Check email format and password length, including its UTF-8 byte length. |
-| Cannot log in with the new email | Expected: Lesson 10 will connect stored users to authentication. |
+| Cannot log in with the new email | Check the updated [Lesson 10](10-login-with-a-session.md) login instructions and the `dev` profile. |
 | Migration fails | Check the PostgreSQL service, project database settings and Flyway output; never delete existing databases to resolve an error. |
 
 ## 8. Interview questions

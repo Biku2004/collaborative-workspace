@@ -51,6 +51,7 @@ class DocumentHttpIntegrationTest {
         String base = "http://127.0.0.1:" + port;
         UUID createdId = null;
         String userEmail = "lesson-" + UUID.randomUUID() + "@example.com";
+        String otherEmail = "other-" + UUID.randomUUID() + "@example.com";
         try {
             assertEquals(200, send(client, "GET", base + "/api/status", null).statusCode());
             assertEquals(401, send(client, "GET", base + "/api/documents/00000000-0000-0000-0000-000000000000", null).statusCode());
@@ -89,6 +90,48 @@ class DocumentHttpIntegrationTest {
             assertNotEquals("test-only-long-password", hash);
             assertTrue(passwordEncoder.matches("test-only-long-password", hash));
             assertFalse(passwordEncoder.matches("wrong-password", hash));
+            String otherPayload = "{\"email\":\"" + otherEmail + "\",\"password\":\"second-long-password\"}";
+            assertEquals(201, post(client, base + "/api/dev/users", otherPayload, csrf).statusCode());
+
+            var userCookies = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
+            HttpClient userClient = HttpClient.newBuilder().cookieHandler(userCookies).build();
+            assertEquals(401, send(userClient, "GET", base + "/api/me", null).statusCode());
+            String userCsrf = token(send(userClient, "GET", base + "/api/csrf", null).body());
+            String beforeLogin = userCookies.getCookieStore().getCookies().stream().filter(c -> c.getName().equals("JSESSIONID")).findFirst().orElseThrow().getValue();
+            var wrongUser = login(userClient, base, userEmail, "wrong-password", userCsrf);
+            assertTrue(wrongUser.headers().firstValue("Location").orElseThrow().contains("error"));
+            assertEquals(401, send(userClient, "GET", base + "/api/me", null).statusCode());
+            var success = login(userClient, base, userEmail.toUpperCase(java.util.Locale.ROOT), "test-only-long-password", userCsrf);
+            assertEquals(302, success.statusCode());
+            String afterLogin = userCookies.getCookieStore().getCookies().stream().filter(c -> c.getName().equals("JSESSIONID")).findFirst().orElseThrow().getValue();
+            assertNotEquals(beforeLogin, afterLogin);
+            var staleSession = HttpRequest.newBuilder(URI.create(base + "/api/me"))
+                    .header("Cookie", "JSESSIONID=" + beforeLogin).GET().build();
+            assertEquals(401, HttpClient.newHttpClient().send(staleSession, HttpResponse.BodyHandlers.discarding()).statusCode());
+            String cookieHeader = success.headers().firstValue("Set-Cookie").orElseThrow();
+            assertTrue(cookieHeader.toLowerCase(java.util.Locale.ROOT).contains("httponly"));
+            assertTrue(cookieHeader.toLowerCase(java.util.Locale.ROOT).contains("samesite=lax"));
+            var me = send(userClient, "GET", base + "/api/me?username=" + otherEmail, null);
+            assertEquals(200, me.statusCode());
+            assertTrue(me.body().contains(userEmail));
+            assertFalse(me.body().contains(otherEmail));
+            assertEquals(403, post(userClient, base + "/api/documents", "{\"title\":\"old token\"}", userCsrf).statusCode());
+            String freshCsrf = token(send(userClient, "GET", base + "/api/csrf", null).body());
+            assertEquals(403, post(userClient, base + "/api/dev/users", otherPayload, freshCsrf).statusCode());
+
+            HttpClient otherClient = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
+            String otherCsrf = token(send(otherClient, "GET", base + "/api/csrf", null).body());
+            assertEquals(302, login(otherClient, base, otherEmail, "second-long-password", otherCsrf).statusCode());
+            assertTrue(send(otherClient, "GET", base + "/api/me", null).body().contains(otherEmail));
+            assertTrue(send(userClient, "GET", base + "/api/me", null).body().contains(userEmail));
+            HttpClient unknownClient = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
+            String unknownCsrf = token(send(unknownClient, "GET", base + "/api/csrf", null).body());
+            assertTrue(login(unknownClient, base, "unknown@example.com", "second-long-password", unknownCsrf).headers().firstValue("Location").orElseThrow().contains("error"));
+            assertEquals(401, send(unknownClient, "GET", base + "/api/me", null).statusCode());
+            HttpClient bootstrapAgain = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
+            String bootstrapCsrf = token(send(bootstrapAgain, "GET", base + "/api/csrf", null).body());
+            assertEquals(302, login(bootstrapAgain, base, "learner", "test-only-password", bootstrapCsrf).statusCode());
+            assertTrue(send(bootstrapAgain, "GET", base + "/api/me", null).body().contains("learner"));
             assertEquals(400, post(client, base + "/api/dev/users", "{\"email\":\"invalid\",\"password\":\"a-long-enough-password\"}", csrf).statusCode());
             assertEquals(400, post(client, base + "/api/dev/users", "{\"email\":\"valid@example.com\",\"password\":\"short\"}", csrf).statusCode());
             assertEquals(400, post(client, base + "/api/dev/users", "{\"email\":\"valid@example.com\",\"password\":\"" + "é".repeat(40) + "\"}", csrf).statusCode());
@@ -107,7 +150,17 @@ class DocumentHttpIntegrationTest {
         } finally {
             if (createdId != null) jdbc.update("DELETE FROM documents WHERE id = ?", createdId);
             jdbc.update("DELETE FROM app_users WHERE email = ?", userEmail);
+            jdbc.update("DELETE FROM app_users WHERE email = ?", otherEmail);
         }
+    }
+
+    private HttpResponse<String> login(HttpClient client, String base, String username, String password, String csrf) throws Exception {
+        String form = "username=" + java.net.URLEncoder.encode(username, java.nio.charset.StandardCharsets.UTF_8)
+                + "&password=" + java.net.URLEncoder.encode(password, java.nio.charset.StandardCharsets.UTF_8);
+        var request = HttpRequest.newBuilder(URI.create(base + "/login"))
+                .header("Content-Type", "application/x-www-form-urlencoded").header("X-CSRF-TOKEN", csrf)
+                .POST(HttpRequest.BodyPublishers.ofString(form)).build();
+        return client.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private String token(String json) {

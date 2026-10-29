@@ -1,6 +1,6 @@
 # Collaborative Workspace — learning and implementation plan
 
-Prepared 29 October 2026. Status: Lessons 1–9 are implemented and verified locally. A temporary development login protects the document API, and user accounts can be provisioned with hashed passwords. Database-backed login, workspace permissions and collaboration are later milestones.
+Prepared 29 October 2026. Status: Lessons 1–11 are implemented and verified locally. Stored users can log in and out through the local development profile; workspace permissions and collaboration are later milestones.
 
 We will assume no prior experience with Spring and explain Java concepts whenever they are needed. We will implement one feature per lesson and verify it before moving on. The goal is a project you can build, debug, and defend in an interview.
 
@@ -14,7 +14,9 @@ The supplied attachment is the project brief. We will provide the beginner-frien
 | [Next lessons: 8–37](docs/07-next-lessons-roadmap.md) | One-feature lessons from authentication through rich-text collaboration and operations |
 | [Lesson 8: Spring Security](docs/lessons/08-spring-security.md) | Temporary local login, authorization checks, CSRF protection, and how to run and test them |
 | [Lesson 9: Users and password hashes](docs/lessons/09-users-and-passwords.md) | Development-only user provisioning, password hashing, validation and database uniqueness |
-| [Current API endpoints](docs/08-api-endpoints.md) | Methods, routes, access requirements and expected responses through Lesson 9 |
+| [Lesson 10: Login and sessions](docs/lessons/10-login-with-a-session.md) | Database-backed development login, session identity and fixation protection |
+| [Lesson 11: Logout and session lifetime](docs/lessons/11-logout-and-session-lifetime.md) | Logout, CSRF, session invalidation, idle timeout and tests |
+| [Current API endpoints](docs/08-api-endpoints.md) | Methods, routes, access requirements and expected responses through Lesson 11 |
 | [1. Architecture and foundations](docs/01-architecture.md) | Expanded product idea, concepts, recommended architecture, alternatives, and corrections to the brief |
 | [2. Data, protocol, and algorithms](docs/02-data-and-protocol.md) | Tables, permissions, API contracts, edit/reconnect/restore flows, and transaction boundaries |
 | [3. Feature-by-feature implementation](docs/03-implementation-roadmap.md) | Ordered lessons, Spring topics, files to build, acceptance tests, and stopping points |

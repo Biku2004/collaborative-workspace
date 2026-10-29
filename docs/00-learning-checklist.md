@@ -19,6 +19,8 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 
 - [x] **Lesson 8 — Spring Security foundation.** See [Lesson 8](lessons/08-spring-security.md). Temporary development login and CSRF protection are verified; persisted identities and workspace authorization remain future lessons.
 - [x] **Lesson 9 — Store users and hash passwords.** See [Lesson 9](lessons/09-users-and-passwords.md). Controlled development provisioning is verified; login with stored users is Lesson 10.
+- [x] **Lesson 10 — Log in with a session.** See [Lesson 10](lessons/10-login-with-a-session.md). Stored user sessions are tested in the local development profile; workspace authorization remains a later lesson.
+- [x] **Lesson 11 — Logout and session lifetime.** See [Lesson 11](lessons/11-logout-and-session-lifetime.md). Logout, CSRF, idle expiry and session isolation are tested.
 
 - [ ] Add authentication and sessions, one feature at a time.
 - [ ] Add workspaces and member roles; test that users cannot access another workspace.

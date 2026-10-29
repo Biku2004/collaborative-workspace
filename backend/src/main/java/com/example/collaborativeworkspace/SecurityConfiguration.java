@@ -11,9 +11,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
@@ -25,15 +24,14 @@ public class SecurityConfiguration {
     @Profile("dev")
     PasswordEncoder developmentPasswordEncoder(@Value("${workspace.security.bcrypt-strength:10}") int strength) {
         if (strength < 10 || strength > 16) throw new IllegalArgumentException("BCrypt strength must be between 10 and 16");
-        return new BCryptPasswordEncoder(strength);
+        return new BoundedBcryptPasswordEncoder(strength);
     }
 
     @Bean
     @Profile("dev")
-    UserDetailsService temporaryDevelopmentUser(@Value("${workspace.dev.password}") String password, PasswordEncoder encoder) {
+    UserDetails temporaryBootstrapUser(@Value("${workspace.dev.password}") String password, PasswordEncoder encoder) {
         if (password.isBlank()) throw new IllegalArgumentException("Development password must not be blank");
-        var user = User.withUsername("learner").password(encoder.encode(password)).roles("USER").build();
-        return new InMemoryUserDetailsManager(user);
+        return User.withUsername("learner").password(encoder.encode(password)).roles("BOOTSTRAP").build();
     }
 
     @Bean
@@ -47,9 +45,15 @@ public class SecurityConfiguration {
     SecurityFilterChain developmentSecurity(HttpSecurity http) throws Exception {
         return http.authorizeHttpRequests(auth -> auth
                     .requestMatchers(HttpMethod.GET, "/api/status", "/api/csrf").permitAll()
+                    .requestMatchers("/api/dev/users", "/api/dev/users/**").hasRole("BOOTSTRAP")
                     .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
                     .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())
+                .sessionManagement(session -> session.sessionFixation(fixation -> fixation.changeSessionId()))
+                .logout(logout -> logout.invalidateHttpSession(true)
+                        .clearAuthentication(true)
+                        .deleteCookies("JSESSIONID")
+                        .logoutSuccessUrl("/login?logout"))
                 .exceptionHandling(errors -> errors.defaultAuthenticationEntryPointFor(
                     new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
                     PathPatternRequestMatcher.withDefaults().matcher("/api/**")))

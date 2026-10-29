@@ -1,10 +1,10 @@
 # 7. Roadmap after Lesson 7
 
-This is a **plan** for the remaining features. Lessons 8–9 are complete; Lessons 10–37 remain planned. Lesson numbers below continue the [learning checklist](00-learning-checklist.md); the broader architecture guide uses different **step** numbers. One lesson delivers one primary capability, although a difficult lesson may take more than one session. We implement, explain and verify each lesson before moving to the next.
+This is a **plan** for the remaining features. Lessons 8–11 are complete; Lessons 12–37 remain planned. Lesson numbers below continue the [learning checklist](00-learning-checklist.md); the broader architecture guide uses different **step** numbers. One lesson delivers one primary capability, although a difficult lesson may take more than one session. We implement, explain and verify each lesson before moving to the next.
 
 ## Where we are now
 
-Lessons 1–7 created a Spring Boot application, a document API, validation and PostgreSQL persistence. Lesson 8 added a temporary local development login and CSRF protection. Lesson 9 added development-only provisioning of stored user accounts and password hashes; those accounts cannot log in until Lesson 10. Local development uses the existing PostgreSQL server, with separate development and test databases. There is **no workspace authorization yet**, and the development profile is only for local learning. A document currently has no workspace or owner. The frontend and collaboration features are not yet implemented.
+Lessons 1–7 created a Spring Boot application, a document API, validation and PostgreSQL persistence. Lesson 8 added a temporary local development login and CSRF protection. Lesson 9 added development-only provisioning of stored user accounts and password hashes; Lesson 10 connects those accounts to login; Lesson 11 covers logout and session expiry. Local development uses the existing PostgreSQL server, with separate development and test databases. There is **no workspace authorization yet**, and the development profile is only for local learning. A document currently has no workspace or owner. The frontend and collaboration features are not yet implemented.
 
 Every coding lesson will include: the problem and a small example; required Java, Spring or database concepts; request/data flow and invariants; exact files and complete code; Windows PowerShell commands; expected output; a success and meaningful negative/failure test; common mistakes; interview questions and answers; and a checkpoint before moving on. The implementation may adjust file names as the project grows.
 
@@ -242,4 +242,4 @@ Comments, mentions, exports, object storage, Kafka and explicit room ownership a
 
 ## Next lesson
 
-Continue with **Lesson 10: log in with persisted accounts**. Controlled provisioning is described in the [Lesson 9 guide](lessons/09-users-and-passwords.md). We will not claim workspace isolation until Lessons 12–15 are complete.
+Continue with **Lesson 12: create workspaces**. Logout and session lifetime are described in the [Lesson 11 guide](lessons/11-logout-and-session-lifetime.md). We will not claim workspace isolation until Lessons 12–15 are complete.

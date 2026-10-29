@@ -13,8 +13,12 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 public class ApiExceptionHandler {
     @ExceptionHandler(DocumentNotFoundException.class)
     ResponseEntity<Map<String, String>> notFound() { return error(HttpStatus.NOT_FOUND, "Document not found"); }
+    @ExceptionHandler(DuplicateUserException.class)
+    ResponseEntity<Map<String, String>> duplicateUser() { return error(HttpStatus.CONFLICT, "An account with that email already exists"); }
+    @ExceptionHandler(InvalidUserInputException.class)
+    ResponseEntity<Map<String, String>> invalidUser() { return error(HttpStatus.BAD_REQUEST, "Invalid user input"); }
     @ExceptionHandler({MethodArgumentNotValidException.class, MethodArgumentTypeMismatchException.class, HttpMessageNotReadableException.class})
-    ResponseEntity<Map<String, String>> badRequest(Exception ex) { return error(HttpStatus.BAD_REQUEST, "Invalid request: provide a valid document id and a non-blank title of at most 200 characters"); }
+    ResponseEntity<Map<String, String>> badRequest(Exception ex) { return error(HttpStatus.BAD_REQUEST, "Invalid request"); }
     private ResponseEntity<Map<String, String>> error(HttpStatus status, String message) {
         return ResponseEntity.status(status).body(Map.of("error", message));
     }

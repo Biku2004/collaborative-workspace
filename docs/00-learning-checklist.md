@@ -17,6 +17,9 @@ We will complete and verify each item before moving to the next. Each lesson wil
 
 The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons roadmap](07-next-lessons-roadmap.md). The items below summarize its milestones.
 
+- [x] **Lesson 8 — Spring Security foundation.** See [Lesson 8](lessons/08-spring-security.md). Temporary development login and CSRF protection are verified; persisted identities and workspace authorization remain future lessons.
+- [x] **Lesson 9 — Store users and hash passwords.** See [Lesson 9](lessons/09-users-and-passwords.md). Controlled development provisioning is verified; login with stored users is Lesson 10.
+
 - [ ] Add authentication and sessions, one feature at a time.
 - [ ] Add workspaces and member roles; test that users cannot access another workspace.
 - [ ] Associate documents with workspaces and enforce permissions.

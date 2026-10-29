@@ -1,6 +1,6 @@
 # Collaborative Workspace — learning and implementation plan
 
-Prepared 29 October 2026. Status: Lessons 1–7 are implemented and verified locally; document APIs and PostgreSQL persistence are working. Authentication and collaboration are later milestones.
+Prepared 29 October 2026. Status: Lessons 1–9 are implemented and verified locally. A temporary development login protects the document API, and user accounts can be provisioned with hashed passwords. Database-backed login, workspace permissions and collaboration are later milestones.
 
 We will assume no prior experience with Spring and explain Java concepts whenever they are needed. We will implement one feature per lesson and verify it before moving on. The goal is a project you can build, debug, and defend in an interview.
 
@@ -12,6 +12,9 @@ The supplied attachment is the project brief. We will provide the beginner-frien
 |---|---|
 | [0. One-feature-at-a-time checklist](docs/00-learning-checklist.md) | What we do first, what comes next, and the local PostgreSQL setup |
 | [Next lessons: 8–37](docs/07-next-lessons-roadmap.md) | One-feature lessons from authentication through rich-text collaboration and operations |
+| [Lesson 8: Spring Security](docs/lessons/08-spring-security.md) | Temporary local login, authorization checks, CSRF protection, and how to run and test them |
+| [Lesson 9: Users and password hashes](docs/lessons/09-users-and-passwords.md) | Development-only user provisioning, password hashing, validation and database uniqueness |
+| [Current API endpoints](docs/08-api-endpoints.md) | Methods, routes, access requirements and expected responses through Lesson 9 |
 | [1. Architecture and foundations](docs/01-architecture.md) | Expanded product idea, concepts, recommended architecture, alternatives, and corrections to the brief |
 | [2. Data, protocol, and algorithms](docs/02-data-and-protocol.md) | Tables, permissions, API contracts, edit/reconnect/restore flows, and transaction boundaries |
 | [3. Feature-by-feature implementation](docs/03-implementation-roadmap.md) | Ordered lessons, Spring topics, files to build, acceptance tests, and stopping points |
@@ -31,7 +34,7 @@ The first complete version uses:
 - A small private Node/Yjs document engine for binary validation, document reconstruction, and checkpoints.
 - PostgreSQL as the authoritative store and initial durability boundary.
 
-For development, use the PostgreSQL installation already on your computer. Create a separate project database and user when the PostgreSQL lesson arrives; do not modify existing databases. Check whether another service is already available before adding it, and use Docker for missing services when needed. Local development and test data must stay separate; isolated Docker-based integration tests remain an optional later choice.
+Development uses the existing local PostgreSQL installation with separate project and test databases. Check whether another service is already available before adding it, and use Docker for missing services when needed. Local development and test data must stay separate; isolated Docker-based integration tests remain an optional later choice.
 
 The Java application owns authorization, room transport, durable acceptance, history, and business rules. The Node process is a document-processing dependency; it is not an independent authority over permissions or committed edits.
 
@@ -59,6 +62,6 @@ We will not start with all modules or services pre-generated. [Lesson 1](docs/le
 
 ## Important boundaries
 
-The architecture beyond the document API is a researched proposal, and the system has not been benchmarked. Numerical limits are starting hypotheses. A finite question bank cannot contain every possible interview question; the handbook teaches the reasoning needed to answer unfamiliar ones.
+The architecture beyond the initial security and document API is a researched proposal, and the system has not been benchmarked. Numerical limits are starting hypotheses. A finite question bank cannot contain every possible interview question; the handbook teaches the reasoning needed to answer unfamiliar ones.
 
 The Yjs engine boundary and custom provider require an early compatibility experiment before production claims. A simpler alternative is a conventional Node/Yjs collaboration server with Java handling the business API; we retain that fallback if the Java transport experiment costs more than its learning value.

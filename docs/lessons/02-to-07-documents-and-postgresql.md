@@ -1,6 +1,6 @@
 # Lessons 2–7: HTTP, documents and PostgreSQL
 
-These lessons build on Lesson 1. The code has been tested against dedicated development and test databases on your existing local PostgreSQL 18 server. The complete implementation is in the `backend/src` files; the sections below explain each step.
+These lessons build on Lesson 1. The code has been tested against dedicated development and test databases on your existing local PostgreSQL 18 server. Lesson 8 subsequently added login and CSRF protection, so its [updated run and API instructions](08-spring-security.md) supersede the unauthenticated examples below.
 
 ## Lesson 2: Your first HTTP endpoint
 

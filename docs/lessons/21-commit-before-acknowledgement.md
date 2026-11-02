@@ -1,5 +1,7 @@
 # Lesson 21 — Commit document updates before acknowledging them
 
+> [Lesson 22](22-broadcast-and-repair.md) adds a relay and bounded replay for committed updates. The commit-before-acknowledgement rule is unchanged.
+
 ## 1. What we built
 
 An owner or editor can submit one **plain-text Yjs update** through a joined document WebSocket. The Java server asks the private Yjs engine to reconstruct a speculative candidate. It then rechecks authorization and the document head inside a PostgreSQL transaction, records the update, advances the sequence and checkpoint, and adds an outbox row. The client receives `SAVED` only after the transaction commits.

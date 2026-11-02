@@ -44,6 +44,7 @@ class WorkspaceIntegrationTest {
         registry.add("spring.datasource.username", () -> required("WORKSPACE_TEST_DB_USER"));
         registry.add("spring.datasource.password", () -> required("WORKSPACE_TEST_DB_PASSWORD"));
         registry.add("workspace.dev.password", () -> "test-only-password");
+        registry.add("workspace.delivery.enabled", () -> "false");
     }
 
     private static String required(String name) {

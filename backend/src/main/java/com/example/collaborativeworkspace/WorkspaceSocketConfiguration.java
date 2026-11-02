@@ -10,6 +10,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @Configuration
 @Profile("dev")
 @EnableWebSocket
+@org.springframework.scheduling.annotation.EnableScheduling
 public class WorkspaceSocketConfiguration implements WebSocketConfigurer {
     private final WorkspaceSocketHandler handler;
     private final WorkspaceSocketHandshake handshake;

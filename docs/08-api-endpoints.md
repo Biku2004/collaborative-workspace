@@ -1,4 +1,4 @@
-# API endpoint reference through Lesson 21
+# API endpoint reference through Lesson 23
 
 This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 
@@ -22,7 +22,7 @@ This table describes the currently implemented routes, not the planned collabora
 | POST | `/api/documents` | Former unscoped creation route | Removed | Returns 404 for an authenticated request with valid CSRF. |
 | GET | `/api/documents/{id}` | Read one document | Any current workspace member | Returns 200 with document metadata, including archived documents; missing, unassigned, and inaccessible documents return 404. |
 | GET | `/api/workspaces/{workspaceId}/documents` | List documents in a workspace | Any current workspace member | Returns 200 with active `items` and `nextCursor`; accepts `limit` (1–100, default 20) and optional `cursor`. Inaccessible workspace gives 404, invalid page parameters give 400. |
-| GET (WebSocket upgrade) | `/api/workspaces/{workspaceId}/socket` | Open a minimal WebSocket greeting | Stored-user session, exact allowed Origin, current workspace member; `dev` only | Send `{"type":"HELLO","version":1}`; receive `WELCOME` with the workspace ID. Then `JOIN`, `TEST_MESSAGE`, and `LEAVE` support temporary document-room messages. `SUBMIT_UPDATE` commits supported updates before `SAVED`; broadcast and replay remain future work. |
+| GET (WebSocket upgrade) | `/api/workspaces/{workspaceId}/socket` | Open a minimal WebSocket greeting | Stored-user session, exact allowed Origin, current workspace member; `dev` only | Send `{"type":"HELLO","version":1}`; receive `WELCOME` with the workspace ID. Then `JOIN`, `TEST_MESSAGE`, and `LEAVE` support temporary document-room messages. `SUBMIT_UPDATE` commits supported updates before `SAVED`; `UPDATE`, `HEAD`, and bounded `SYNC`/`SYNC_PAGE` support single-instance relay and repair. |
 | POST | `/api/dev/users` | Provision a stored user for the learning project | `dev` only; authenticated `learner` bootstrap session and CSRF token | JSON with `email` and `password`. Returns 201 with `id`, normalized `email`, `createdAt`; duplicate email gives 409 and invalid input gives 400. The response never includes the password or hash. |
 
 In the default non-`dev` profile, `GET /api/status` is allowed and protected routes are denied. The local dev profile binds to `127.0.0.1` by default. Exact security responses depend on which filter rejects a request: an anonymous protected API GET returns 401, while a POST without a CSRF token can return 403 before authentication is checked.
@@ -38,3 +38,7 @@ The WebSocket greeting and session cleanup are explained in [Lesson 19](lessons/
 The room protocol and its bounds are explained in [Lesson 20](lessons/20-document-rooms-and-bounded-messaging.md).
 
 The versioned update/acknowledgement contract is described in [Lesson 21](lessons/21-commit-before-acknowledgement.md).
+
+The committed relay and replay contract is described in [Lesson 22](lessons/22-broadcast-and-repair.md).
+
+The local browser login and list flow is described in [Lesson 23](lessons/23-minimal-browser-application.md).

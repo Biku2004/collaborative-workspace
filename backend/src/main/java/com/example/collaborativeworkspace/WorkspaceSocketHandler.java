@@ -18,8 +18,9 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
     private final JsonMapper json;
     private final DocumentRoomHub rooms;
     private final DocumentUpdateService updates;
-    public WorkspaceSocketHandler(SocketSessionRegistry registry, JsonMapper json, DocumentRoomHub rooms, DocumentUpdateService updates) {
-        this.registry = registry; this.json = json; this.rooms = rooms; this.updates = updates;
+    private final DocumentDeliveryService delivery;
+    public WorkspaceSocketHandler(SocketSessionRegistry registry, JsonMapper json, DocumentRoomHub rooms, DocumentUpdateService updates, DocumentDeliveryService delivery) {
+        this.registry = registry; this.json = json; this.rooms = rooms; this.updates = updates; this.delivery = delivery;
     }
 
     @Override public void afterConnectionEstablished(WebSocketSession socket) throws Exception {
@@ -53,11 +54,23 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
                 if (!peer.allowed(document)) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
                 peer.document = document;
                 peer.sender.send(json.writeValueAsString(Map.of("type", "JOINED", "version", 1, "documentId", document)), () -> document.equals(peer.document) && peer.allowed(document));
+                peer.roomReady = true;
             } else if (type.equals("LEAVE") && root.size() == 2 && peer.document != null) {
                 java.util.UUID document = peer.document;
                 if (!peer.allowed(document)) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
+                peer.roomReady = false;
                 peer.document = null;
                 peer.sender.send(json.writeValueAsString(Map.of("type", "LEFT", "version", 1, "documentId", document)), peer::workspaceAllowed);
+            } else if (type.equals("SYNC") && root.size() == 4 && peer.document != null && root.path("epoch").isIntegralNumber()
+                    && root.path("epoch").canConvertToLong() && root.path("epoch").longValue() >= 0 && root.path("after").isIntegralNumber()
+                    && root.path("after").canConvertToLong() && root.path("after").longValue() >= 0) {
+                var document = peer.document;
+                try {
+                    String page = delivery.sync(peer.workspace, document, peer.user, root.path("epoch").longValue(), root.path("after").longValue());
+                    peer.sender.send(page, () -> document.equals(peer.document) && peer.allowed(document));
+                } catch (DocumentUpdateException ex) {
+                    peer.sender.send(json.writeValueAsString(Map.of("type", "REJECTED", "version", 1, "code", ex.code())), peer::workspaceAllowed);
+                }
             } else if (type.equals("SUBMIT_UPDATE") && root.size() == 5 && peer.document != null && root.path("epoch").isIntegralNumber()
                     && root.path("epoch").canConvertToLong() && root.path("epoch").longValue() >= 0 && root.path("updateId").isTextual() && root.path("payload").isTextual()) {
                 var document = peer.document;

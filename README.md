@@ -1,6 +1,6 @@
 # Collaborative Workspace — learning and implementation plan
 
-Prepared 29 October 2026. Status: Lessons 1–21 are implemented and verified locally. Stored users can log in, manage workspace membership, and create, read, list, rename and archive authorized workspace documents; real-time collaboration is a later milestone.
+Prepared 29 October 2026. Status: Lessons 1–24 are implemented and verified locally. Stored users can log in, manage workspace membership, and create, read, list, rename and archive authorized workspace documents. A bounded, online-only plain-text collaboration prototype is available; offline recovery and rich text are later milestones.
 
 We will assume no prior experience with Spring and explain Java concepts whenever they are needed. We will implement one feature per lesson and verify it before moving on. The goal is a project you can build, debug, and defend in an interview.
 
@@ -26,6 +26,9 @@ The supplied attachment is the project brief. We will provide the beginner-frien
 | [Lesson 19: Authenticate a WebSocket](docs/lessons/19-authenticate-websocket.md) | Session, Origin and membership checks for a versioned greeting |
 | [Lesson 20: Document rooms](docs/lessons/20-document-rooms-and-bounded-messaging.md) | Room isolation, permission rechecks and bounded messaging |
 | [Lesson 21: Commit before acknowledgement](docs/lessons/21-commit-before-acknowledgement.md) | Durable updates, idempotent retries and transaction boundaries |
+| [Lesson 22: Broadcast and repair](docs/lessons/22-broadcast-and-repair.md) | Outbox relay, bounded replay and contiguous sequence repair |
+| [Lesson 23: Browser application](docs/lessons/23-minimal-browser-application.md) | Session login and authorized workspace/document lists |
+| [Lesson 24: Plain-text collaboration](docs/lessons/24-plain-text-collaborative-editor.md) | Independent browser replicas and committed update synchronization |
 | [Quality review fixes](docs/09-quality-hardening.md) | Strict versions, test isolation, consistent errors, safe retries and bounded lists |
 | [Security and quality checkpoint](docs/10-security-quality-checkpoint.md) | Verified boundaries, failure tests and outstanding risks through Lesson 21 |
 | [Current API endpoints](docs/08-api-endpoints.md) | Methods, routes, access requirements and expected responses through Lesson 16 |

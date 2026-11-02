@@ -32,6 +32,7 @@ public class DocumentRoomHub {
         final BoundedSocketSender sender;
         volatile UUID document;
         volatile boolean welcomed;
+        volatile boolean roomReady;
         Peer(WebSocketSession socket) {
             this.socket = socket;
             workspace = UUID.fromString((String) socket.getAttributes().get("workspaceId"));
@@ -60,9 +61,31 @@ public class DocumentRoomHub {
     }
     void broadcast(Peer sender, UUID document, String json) {
         for (Peer target : peers.values()) {
-            if (sender.workspace.equals(target.workspace) && document.equals(target.document)) {
+            if (target.roomReady && sender.workspace.equals(target.workspace) && document.equals(target.document)) {
                 target.sender.send(json, () -> document.equals(sender.document) && document.equals(target.document)
                         && sender.allowed(document) && target.allowed(document));
+            }
+        }
+    }
+    void broadcastCommitted(UUID workspace, UUID document, String json) {
+        for (Peer target : peers.values()) {
+            if (target.roomReady && workspace.equals(target.workspace) && document.equals(target.document))
+                target.sender.send(json, () -> document.equals(target.document) && target.allowed(document));
+        }
+    }
+    void notifyHeads(DocumentUpdateRepository updates, tools.jackson.databind.json.JsonMapper json) {
+        for (Peer peer : peers.values()) {
+            UUID document = peer.document;
+            if (document == null || !peer.roomReady) continue;
+            try {
+                var snapshot = updates.findAccessible(peer.workspace, document, peer.user);
+                if (snapshot.isEmpty()) { peer.sender.close(CloseStatus.POLICY_VIOLATION); continue; }
+                var head = snapshot.get();
+                String value = json.writeValueAsString(java.util.Map.of("type", "HEAD", "version", 1, "documentId", document,
+                        "epoch", head.epoch(), "sequence", head.sequence()));
+                peer.sender.send(value, () -> document.equals(peer.document) && peer.allowed(document));
+            } catch (RuntimeException ex) {
+                org.slf4j.LoggerFactory.getLogger(getClass()).warn("Head notification failed: {}", ex.getClass().getName());
             }
         }
     }

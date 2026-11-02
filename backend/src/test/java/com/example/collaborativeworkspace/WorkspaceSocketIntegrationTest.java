@@ -60,6 +60,7 @@ class WorkspaceSocketIntegrationTest {
         registry.add("spring.datasource.password", () -> System.getenv("WORKSPACE_TEST_DB_PASSWORD"));
         registry.add("workspace.dev.password", () -> "test-only-password");
         registry.add("workspace.websocket.allowed-origin", () -> ORIGIN);
+        registry.add("workspace.delivery.enabled", () -> "false");
     }
 
     @TestConfiguration static class TestEndpoints {

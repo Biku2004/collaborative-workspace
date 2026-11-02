@@ -5,6 +5,9 @@ backend/target/
 node_modules/
 experiments/yjs-two-replicas/dist/
 experiments/yjs-private-engine/dist/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
 
 # Local editor and operating system files
 .idea/

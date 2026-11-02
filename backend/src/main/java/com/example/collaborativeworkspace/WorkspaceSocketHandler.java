@@ -46,7 +46,7 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
             if (!peer.welcomed) {
                 if (!type.equals("HELLO") || root.size() != 2 || !peer.workspaceAllowed()) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
                 peer.welcomed = true;
-                peer.sender.send(json.writeValueAsString(Map.of("type", "WELCOME", "version", 1, "workspaceId", peer.workspace)), peer::workspaceAllowed);
+                peer.sender.send(json.writeValueAsString(Map.of("type", "WELCOME", "version", 1, "workspaceId", peer.workspace, "userId", peer.user)), peer::workspaceAllowed);
             } else if (type.equals("JOIN") && root.size() == 3 && root.path("documentId").isTextual() && peer.document == null) {
                 java.util.UUID document;
                 try { document = java.util.UUID.fromString(root.path("documentId").asText()); }

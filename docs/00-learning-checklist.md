@@ -38,9 +38,10 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 - [x] **Lesson 20 — Document rooms and bounded messaging.** See [Lesson 20](lessons/20-document-rooms-and-bounded-messaging.md). Temporary test messages are scoped to one document room; durable edits remain later work.
 - [x] **Lesson 21 — Commit before acknowledgement.** See [Lesson 21](lessons/21-commit-before-acknowledgement.md). Exact updates, sequence, checkpoint and outbox commit together before SAVED; broadcast and replay remain future lessons.
 - [x] **Lesson 22 — Broadcast committed updates and repair gaps.** See [Lesson 22](lessons/22-broadcast-and-repair.md). A single-instance outbox relay, bounded replay and periodic heads are tested.
-- [x] **Lesson 24 — Plain-text collaborative editor.** See [Lesson 24](lessons/24-plain-text-collaborative-editor.md). Two independent browser contexts converge through the server; offline persistence remains future work.
-- [ ] Add frontend retry, reconnection and offline support in separate lessons.
 - [x] **Lesson 23 — Minimal browser application.** See [Lesson 23](lessons/23-minimal-browser-application.md). Stored-user login and authorized paginated lists are browser-tested.
+- [x] **Lesson 24 — Plain-text collaborative editor.** See [Lesson 24](lessons/24-plain-text-collaborative-editor.md). Two independent browser contexts converge through the server.
+- [x] **Lesson 25 — Offline persistence and a pending queue.** See [Lesson 25](lessons/25-offline-persistence.md). Browser-stored drafts and stable retry IDs are tested; browser storage is not a server durability guarantee.
+- [ ] Add automatic reconnection and reconciliation in Lesson 26.
 - [ ] Add the required TipTap rich-text editor, followed by collaborator presence.
 - [ ] Add checkpoints, named revisions and safe restore in separate lessons.
 - [ ] Add search, monitoring, multi-instance communication and failure testing as separate milestones.

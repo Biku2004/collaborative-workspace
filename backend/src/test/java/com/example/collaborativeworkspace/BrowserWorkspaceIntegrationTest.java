@@ -108,7 +108,7 @@ class BrowserWorkspaceIntegrationTest {
                 Thread.sleep(50);
             }
             assertTrue(ready, () -> "Vite failed to start:\n" + safeRead(viteLog));
-            var runner = new ProcessBuilder("node", "node_modules/@playwright/test/cli.js", "test", "--reporter=line")
+            var runner = new ProcessBuilder("node", "node_modules/@playwright/test/cli.js", "test", "workspace.spec.ts", "editor.spec.ts", "local-document-store.spec.ts", "partial-sync.spec.ts", "--reporter=line")
                     .directory(frontend.toFile()).redirectErrorStream(true).redirectOutput(browserLog.toFile());
             var env = runner.environment();
             env.put("WORKSPACE_E2E_ORIGIN", "http://127.0.0.1:" + frontendPort);
@@ -123,17 +123,47 @@ class BrowserWorkspaceIntegrationTest {
             browser = runner.start();
             assertTrue(browser.waitFor(60, TimeUnit.SECONDS), "Browser verification timed out");
             assertEquals(0, browser.exitValue(), () -> "Browser verification failed:\n" + safeRead(browserLog));
+            if (engine != null) {
+                // The preceding revocation scenario removes Bob; restore him for account-isolation coverage.
+                membership.setRole(sharedWorkspace, alice, new ChangeWorkspaceMemberRequest(bob, WorkspaceRole.EDITOR));
+                assertTrue(Files.isRegularFile(frontend.resolve("dist/sw.js")), "Build the frontend before offline browser verification");
+                stopProcess(vite);
+                var preview = new ProcessBuilder("node", "node_modules/vite/bin/vite.js", "preview", "--port", Integer.toString(frontendPort), "--strictPort")
+                        .directory(frontend.toFile()).redirectErrorStream(true).redirectOutput(viteLog.toFile());
+                preview.environment().put("WORKSPACE_PROXY_TARGET", "http://127.0.0.1:" + port);
+                vite = preview.start();
+                deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15); ready = false;
+                while (vite.isAlive() && System.nanoTime() < deadline) {
+                    try {
+                        if (probe.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + frontendPort + "/sw.js")).timeout(Duration.ofSeconds(2)).GET().build(), HttpResponse.BodyHandlers.discarding()).statusCode() == 200) { ready = true; break; }
+                    } catch (java.io.IOException ignored) { }
+                    Thread.sleep(50);
+                }
+                assertTrue(ready, () -> "Production preview failed to start:\n" + safeRead(viteLog));
+                runner.command("node", "node_modules/@playwright/test/cli.js", "test", "offline-shell.spec.ts", "--reporter=line");
+                browser = runner.start();
+                assertTrue(browser.waitFor(60, TimeUnit.SECONDS), "Offline browser verification timed out");
+                assertEquals(0, browser.exitValue(), () -> "Offline browser verification failed:\n" + safeRead(browserLog));
+            }
         } finally {
-            if (browser != null && browser.isAlive()) { browser.destroyForcibly(); browser.waitFor(5, TimeUnit.SECONDS); }
-            if (vite != null && vite.isAlive()) { vite.destroyForcibly(); vite.waitFor(5, TimeUnit.SECONDS); }
+            stopProcess(browser);
+            stopProcess(vite);
             if (aliceWorkspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", aliceWorkspace); jdbc.update("DELETE FROM workspaces WHERE id=?", aliceWorkspace); }
             if (bobWorkspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", bobWorkspace); jdbc.update("DELETE FROM workspaces WHERE id=?", bobWorkspace); }
             if (sharedWorkspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", sharedWorkspace); jdbc.update("DELETE FROM workspaces WHERE id=?", sharedWorkspace); }
             jdbc.update("DELETE FROM app_users WHERE id IN (?, ?)", aliceId, bobId);
-            Files.deleteIfExists(viteLog); Files.deleteIfExists(browserLog);
+            deleteLog(viteLog); deleteLog(browserLog);
         }
     }
     private static String safeRead(Path file) {
         try { return Files.readString(file); } catch (java.io.IOException ex) { return "Log unavailable"; }
+    }
+    private static void stopProcess(Process process) throws InterruptedException {
+        if (process == null) return;
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        if (process.isAlive()) { process.destroyForcibly(); process.waitFor(5, TimeUnit.SECONDS); }
+    }
+    private static void deleteLog(Path path) {
+        try { Files.deleteIfExists(path); } catch (java.io.IOException ex) { path.toFile().deleteOnExit(); }
     }
 }

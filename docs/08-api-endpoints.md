@@ -1,4 +1,4 @@
-# API endpoint reference through Lesson 23
+# API endpoint reference through Lesson 25
 
 This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 
@@ -8,7 +8,7 @@ This table describes the currently implemented routes, not the planned collabora
 | GET | `/api/csrf` | Obtain a CSRF token for the current session | Public, `dev` only | Returns 200 with `headerName`, `parameterName`, and `token`; response is marked `no-store`. |
 | GET | `/login` | Display Spring Security's login form | Public, `dev` only | HTML login form with a CSRF token. |
 | POST | `/login` | Authenticate a stored user or temporary `learner` bootstrap account | Public, `dev` only; CSRF required | Form fields `username`, `password`, and CSRF token. Success normally returns a redirect and session cookie; failure redirects to a login error. |
-| GET | `/api/me` | Show the current session identity | Authenticated session, `dev` only | Returns 200 with `username`; identity comes from the authenticated session. |
+| GET | `/api/me` | Show the current session identity | Authenticated session, `dev` only | Returns 200 with `username` and the stable stored-user `id` when available; the development bootstrap principal has no stored ID. Identity comes from the authenticated session; the response is `no-store`. |
 | POST | `/api/workspaces` | Create a workspace and its owner membership | Stored-user session and CSRF token, `dev` only | JSON `{ "name": "Product team" }`; returns 201 with workspace fields and `role: OWNER`. |
 | GET | `/api/workspaces` | List the current user's workspace memberships | Stored-user session, `dev` only | Returns 200 and an array scoped to the signed-in user; `limit` is 1–100 (default 20), `after` is a UUID cursor, and `X-Next-Cursor` provides the next position. |
 | GET | `/api/workspaces/{workspaceId}/members` | List a workspace's members | Current workspace member | Returns 200 and member IDs, emails and roles; supports `limit` and `after` with `X-Next-Cursor`; nonmembers receive 404. |
@@ -22,7 +22,7 @@ This table describes the currently implemented routes, not the planned collabora
 | POST | `/api/documents` | Former unscoped creation route | Removed | Returns 404 for an authenticated request with valid CSRF. |
 | GET | `/api/documents/{id}` | Read one document | Any current workspace member | Returns 200 with document metadata, including archived documents; missing, unassigned, and inaccessible documents return 404. |
 | GET | `/api/workspaces/{workspaceId}/documents` | List documents in a workspace | Any current workspace member | Returns 200 with active `items` and `nextCursor`; accepts `limit` (1–100, default 20) and optional `cursor`. Inaccessible workspace gives 404, invalid page parameters give 400. |
-| GET (WebSocket upgrade) | `/api/workspaces/{workspaceId}/socket` | Open a minimal WebSocket greeting | Stored-user session, exact allowed Origin, current workspace member; `dev` only | Send `{"type":"HELLO","version":1}`; receive `WELCOME` with the workspace ID. Then `JOIN`, `TEST_MESSAGE`, and `LEAVE` support temporary document-room messages. `SUBMIT_UPDATE` commits supported updates before `SAVED`; `UPDATE`, `HEAD`, and bounded `SYNC`/`SYNC_PAGE` support single-instance relay and repair. |
+| GET (WebSocket upgrade) | `/api/workspaces/{workspaceId}/socket` | Open a minimal WebSocket greeting | Stored-user session, exact allowed Origin, current workspace member; `dev` only | Send `{"type":"HELLO","version":1}`; receive `WELCOME` with the workspace ID and authenticated stored-user ID. Then `JOIN`, `TEST_MESSAGE`, and `LEAVE` support temporary document-room messages. `SUBMIT_UPDATE` commits supported updates before `SAVED`; `UPDATE`, `HEAD`, and bounded `SYNC`/`SYNC_PAGE` support single-instance relay and repair. |
 | POST | `/api/dev/users` | Provision a stored user for the learning project | `dev` only; authenticated `learner` bootstrap session and CSRF token | JSON with `email` and `password`. Returns 201 with `id`, normalized `email`, `createdAt`; duplicate email gives 409 and invalid input gives 400. The response never includes the password or hash. |
 
 In the default non-`dev` profile, `GET /api/status` is allowed and protected routes are denied. The local dev profile binds to `127.0.0.1` by default. Exact security responses depend on which filter rejects a request: an anonymous protected API GET returns 401, while a POST without a CSRF token can return 403 before authentication is checked.

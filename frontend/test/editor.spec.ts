@@ -32,17 +32,19 @@ test('two independent browser contexts synchronize concurrent inserts and delete
       const original = WebSocket.prototype.send;
       let paused = true;
       let updateSocket: WebSocket | null = null;
-      const queue: Array<() => void> = [];
-      const hooks = window as unknown as Window & { pauseUpdates: () => void; flushUpdates: () => void; closeUpdateSocket: () => void };
+      const queue: Array<{ id: string; send: () => void }> = [];
+      const hooks = window as unknown as Window & { pauseUpdates: () => void; flushUpdates: () => void; closeUpdateSocket: () => void; queuedIds: () => string[] };
       hooks.pauseUpdates = () => { paused = true; };
-      hooks.flushUpdates = () => { paused = false; for (const send of queue.splice(0)) send(); };
+      hooks.flushUpdates = () => { paused = false; for (const item of queue.splice(0)) item.send(); };
+      hooks.queuedIds = () => queue.map(item => item.id);
       hooks.closeUpdateSocket = () => updateSocket?.close();
       WebSocket.prototype.send = function (data: string | ArrayBufferLike | Blob | ArrayBufferView) {
         if (typeof data === 'string') {
           try {
-            if (JSON.parse(data).type === 'SUBMIT_UPDATE') {
+            const message = JSON.parse(data);
+            if (message.type === 'SUBMIT_UPDATE') {
               updateSocket = this;
-              if (paused) { queue.push(() => original.call(this, data)); return; }
+              if (paused) { queue.push({ id: message.updateId as string, send: () => original.call(this, data) }); return; }
             }
           } catch { /* Non-JSON frames belong to other browser connections. */ }
         }
@@ -90,12 +92,34 @@ test('two independent browser contexts synchronize concurrent inserts and delete
     await a.fill(draft);
     await expect(pageA.locator('.editor-status')).toHaveText('Saving…');
     await pageA.evaluate(() => (window as unknown as Window & { closeUpdateSocket: () => void }).closeUpdateSocket());
-    await expect(pageA.getByRole('alert')).toContainText('Unsaved text stays in this tab');
-    await expect(a).toHaveAttribute('readonly');
+    await expect(pageA.locator('.editor-status')).toContainText(/Offline|Saved locally/);
+    await expect(a).not.toHaveAttribute('readonly');
     await expect(a).toHaveValue(draft);
+    await a.fill(draft + ' offline');
+    await expect(pageA.locator('.editor-status')).toHaveText('Saved locally; pending server confirmation');
+    const beforeReload = await pageA.evaluate(async () => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open('workspace-offline-v1');
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+      });
+      const values = await new Promise<{ pending: { id: string }[] }[]>((resolve, reject) => {
+        const request = db.transaction('documents').objectStore('documents').getAll();
+        request.onsuccess = () => resolve(request.result as { pending: { id: string }[] }[]); request.onerror = () => reject(request.error);
+      });
+      db.close(); return values.flatMap(value => value.pending.map(item => item.id));
+    });
+    expect(beforeReload).toHaveLength(2);
     pageA.once('dialog', dialog => void dialog.dismiss());
     await pageA.getByRole('button', { name: /Back to documents/ }).click();
     await expect(a).toBeVisible();
+    pageA.once('dialog', dialog => void dialog.accept());
+    await pageA.reload();
+    await pageA.getByRole('button', { name: new RegExp(workspace) }).click();
+    await pageA.getByRole('button', { name: /Live notes/ }).click();
+    await expect(a).toHaveValue(draft + ' offline');
+    await expect.poll(() => pageA.evaluate(() => (window as unknown as Window & { queuedIds: () => string[] }).queuedIds())).toEqual([beforeReload[0]]);
+    await pageA.evaluate(() => (window as unknown as Window & { flushUpdates: () => void }).flushUpdates());
+    await expect(pageA.locator('.editor-status')).toHaveText(/Saved|Up to date/, { timeout: 15000 });
     expect(errors).toEqual([]);
   } finally { await first.close(); await second.close(); }
 });

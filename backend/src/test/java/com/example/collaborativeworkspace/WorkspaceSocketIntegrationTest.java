@@ -96,6 +96,7 @@ class WorkspaceSocketIntegrationTest {
             String welcome = listener.message.get(5, TimeUnit.SECONDS);
             assertTrue(welcome.contains("\"type\":\"WELCOME\""));
             assertTrue(welcome.contains(workspace.toString()));
+            assertTrue(welcome.contains("\"userId\":\"" + ownerId + "\""));
             assertEquals(1, registry.count());
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
             listener.closed.get(5, TimeUnit.SECONDS);

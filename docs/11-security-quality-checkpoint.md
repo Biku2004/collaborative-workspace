@@ -1,5 +1,7 @@
 # Security and quality checkpoint — Lessons 22–24
 
+> Historical checkpoint: [Lesson 25](lessons/25-offline-persistence.md) subsequently adds browser persistence and manual retry. Its browser-profile privacy, eviction and authorization limitations remain open.
+
 This is a focused review of the local delivery, browser and plain-text editor changes, not a production certification or an exhaustive security scan. The earlier [Lessons 19–21 checkpoint](10-security-quality-checkpoint.md) records the state at that time; its statements that relay and a browser do not exist are historical.
 
 ## Evidence

@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ApiError, currentUser, documentPage, login, logout, workspacePage, type Document, type Workspace } from './api';
+import { ApiError, currentUser, documentPage, login, logout, workspacePage, type CurrentUser, type Document, type Workspace } from './api';
 import Editor from './Editor';
+import { clearOfflineContext, readOfflineContext, saveOfflineContext, type OfflineContext } from './offlineContext';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 }
 
 export default function App() {
-  const [user, setUser] = useState<string | null | undefined>(undefined);
+  const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
+  const [offline, setOffline] = useState(false);
+  const [offlineContext, setOfflineContext] = useState<OfflineContext | undefined>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -40,16 +43,21 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    currentUser().then(name => { if (active) setUser(name); }).catch(error => {
+    currentUser().then(name => {
+      if (!active) return;
+      if (readOfflineContext()?.user.id !== name.id) clearOfflineContext();
+      setUser(name);
+    }).catch(error => {
       if (!active) return;
       setUser(null);
+      if (error instanceof ApiError && error.status === 0) setOfflineContext(readOfflineContext());
       if (!(error instanceof ApiError && error.status === 401)) setLoginError(errorMessage(error));
     });
     return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || offline) return;
     const generation = ++workspaceGeneration.current;
     setWorkspaceLoading(true); setWorkspaceError(''); setWorkspaces([]); setWorkspaceCursor(null);
     workspacePage().then(page => {
@@ -59,12 +67,12 @@ export default function App() {
       if (generation === workspaceGeneration.current) handleFailure(error, setWorkspaceError);
     }).finally(() => { if (generation === workspaceGeneration.current) setWorkspaceLoading(false); });
     return () => { workspaceGeneration.current++; };
-  }, [user]);
+  }, [user, offline]);
 
   useEffect(() => {
     const generation = ++documentGeneration.current;
     setDocuments([]); setDocumentCursor(null); setDocumentError('');
-    if (!user || !selected) { setDocumentLoading(false); return; }
+    if (!user || !selected || offline) { setDocumentLoading(false); return; }
     setDocumentLoading(true);
     documentPage(selected.id).then(page => {
       if (generation !== documentGeneration.current) return;
@@ -73,23 +81,36 @@ export default function App() {
       if (generation === documentGeneration.current) handleFailure(error, setDocumentError);
     }).finally(() => { if (generation === documentGeneration.current) setDocumentLoading(false); });
     return () => { documentGeneration.current++; };
-  }, [user, selected]);
+  }, [user, selected, offline]);
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setLoginError('');
-    try { const name = await login(email.trim(), password); setPassword(''); setUser(name); }
+    try {
+      const name = await login(email.trim(), password);
+      if (readOfflineContext()?.user.id !== name.id) clearOfflineContext();
+      setPassword(''); setOfflineContext(undefined); setUser(name);
+    }
     catch (error) { setPassword(''); setLoginError(errorMessage(error)); }
     finally { setBusy(false); }
   }
   async function signOut() {
-    if (dirtyRef.current && !window.confirm('You have unsaved changes. Leave and discard the text in this tab?')) return;
+    if (dirtyRef.current && !window.confirm('Changes are awaiting server confirmation. Leaving may lose changes not yet saved locally. Continue?')) return;
     setBusy(true); setWorkspaceError('');
-    try { await logout(); endSession(); }
+    try { await logout(); clearOfflineContext(); setOfflineContext(undefined); endSession(); }
     catch (error) { handleFailure(error, setWorkspaceError); }
     finally { setBusy(false); }
   }
+  function openOffline(context = offlineContext) {
+    if (!context) return;
+    setOffline(true); setUser(context.user); setWorkspaces([context.workspace]);
+    setSelected(context.workspace); setOpenDocument(context.document);
+  }
+  function closeOffline() {
+    if (!mayLeaveEditor()) return;
+    setOffline(false); endSession(); setOfflineContext(readOfflineContext());
+  }
   function setEditorDirty(value: boolean) { dirtyRef.current = value; setDirty(value); }
-  function mayLeaveEditor(): boolean { return !dirtyRef.current || window.confirm('You have unsaved changes. Leave and discard the text in this tab?'); }
+  function mayLeaveEditor(): boolean { return !dirtyRef.current || window.confirm('Changes are awaiting server confirmation. Leaving may lose changes not yet saved locally. Continue?'); }
   function selectWorkspace(workspace: Workspace) {
     if (openDocument && !mayLeaveEditor()) return;
     setOpenDocument(null); setEditorDirty(false);
@@ -131,30 +152,34 @@ export default function App() {
       <label htmlFor="email">Email</label><input id="email" name="email" type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} required />
       <label htmlFor="password">Password</label><input id="password" name="password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required />
       <button className="primary" disabled={busy} type="submit">{busy ? 'Signing in…' : 'Continue'} <span aria-hidden="true">↗</span></button>
+      {offlineContext && <><button className="quiet" type="button" onClick={() => openOffline()}>Open last local document</button>
+        <p className="form-note">Offline access cannot verify your session or current permissions. Anyone using this browser profile may access local data.</p></>}
       <p className="form-note">Accounts are provisioned through the local development setup.</p>
     </form></section>
   </main>;
 
+  const localDocument = readOfflineContext();
   return <div className="app-shell">
     <header className="topbar"><div className="brand"><span className="brand-mark">W</span> WORKSPACE</div>
-      <div className="account"><span className="account-name">{user}</span><button className="quiet" type="button" onClick={signOut} disabled={busy}>{busy ? 'Signing out…' : 'Sign out'} <span aria-hidden="true">↗</span></button></div></header>
+      <div className="account"><span className="account-name">{user.username}{offline ? ' / Offline' : ''}</span>{offline ? <button className="quiet" type="button" onClick={closeOffline}>Close offline view</button> : <button className="quiet" type="button" onClick={signOut} disabled={busy}>{busy ? 'Signing out…' : 'Sign out'} <span aria-hidden="true">↗</span></button>}</div></header>
     <main className="dashboard"><div className="page-heading"><div><p className="eyebrow">YOUR WORKSPACE / DOCUMENTS</p><h1>Make room for<br /><em>good ideas.</em></h1></div><p className="page-summary">Your teams and their shared documents, all in one place.</p></div>
       <div className="workspace-layout"><section className="sidebar" aria-labelledby="workspaces-heading"><div className="section-title"><h2 id="workspaces-heading">Workspaces</h2><span>01</span></div>
         <p className="muted small">Choose a workspace to see its documents.</p>
+        {!offline && localDocument?.user.id === user.id && <button className="more" type="button" onClick={() => openOffline(localDocument)}>Open last local document</button>}
         {workspaceError && <p className="alert" role="alert">{workspaceError}</p>}
         {workspaceLoading && workspaces.length === 0 && <p className="muted" role="status">Loading workspaces…</p>}
         {!workspaceLoading && !workspaceError && workspaces.length === 0 && <p className="empty-small">No workspaces yet.</p>}
-        <ul className="workspace-list">{workspaces.map(workspace => <li key={workspace.id}><button type="button" className={selected?.id === workspace.id ? 'workspace-button selected' : 'workspace-button'} aria-pressed={selected?.id === workspace.id} onClick={() => selectWorkspace(workspace)}><span className="workspace-icon" aria-hidden="true">{workspace.name.slice(0, 1).toUpperCase()}</span><span className="workspace-copy"><strong>{workspace.name}</strong><small>{workspace.role.toLowerCase()}</small></span><span aria-hidden="true">↗</span></button></li>)}</ul>
+        <ul className="workspace-list">{workspaces.map(workspace => <li key={workspace.id}><button type="button" disabled={offline} className={selected?.id === workspace.id ? 'workspace-button selected' : 'workspace-button'} aria-pressed={selected?.id === workspace.id} onClick={() => selectWorkspace(workspace)}><span className="workspace-icon" aria-hidden="true">{workspace.name.slice(0, 1).toUpperCase()}</span><span className="workspace-copy"><strong>{workspace.name}</strong><small>{workspace.role.toLowerCase()}</small></span><span aria-hidden="true">↗</span></button></li>)}</ul>
         {workspaceCursor && <button className="more" disabled={workspaceLoading} type="button" onClick={moreWorkspaces}>{workspaceLoading ? 'Loading…' : 'Load more workspaces'} <span aria-hidden="true">→</span></button>}
       </section>
-      {openDocument && selected ? <Editor workspaceId={selected.id} documentId={openDocument.id} title={openDocument.title} readOnly={selected.role === 'VIEWER'} onDirty={setEditorDirty} onBack={closeDocument} /> : <section className="documents" aria-labelledby="documents-heading"><div className="section-title"><div><p className="eyebrow">{selected ? selected.name : 'SELECT A WORKSPACE'}</p><h2 id="documents-heading">Documents</h2></div><span>02</span></div>
+      {openDocument && selected && user.id ? <Editor userId={user.id} workspaceId={selected.id} documentId={openDocument.id} title={openDocument.title} readOnly={selected.role === 'VIEWER'} onDirty={setEditorDirty} onBack={closeDocument} /> : <section className="documents" aria-labelledby="documents-heading"><div className="section-title"><div><p className="eyebrow">{selected ? selected.name : 'SELECT A WORKSPACE'}</p><h2 id="documents-heading">Documents</h2></div><span>02</span></div>
         {!selected && <div className="empty-state"><span className="empty-symbol" aria-hidden="true">✳</span><h3>Nothing selected yet.</h3><p>Choose a workspace on the left to browse its documents.</p></div>}
         {selected && <>
           <div className="list-heading"><span>DOCUMENT NAME</span><span>CREATED</span></div>
           {documentError && <p className="alert" role="alert">{documentError}</p>}
           {documentLoading && documents.length === 0 && <p className="muted" role="status">Loading documents…</p>}
           {!documentLoading && !documentError && documents.length === 0 && <div className="empty-state compact"><span className="empty-symbol" aria-hidden="true">◇</span><h3>No documents yet.</h3><p>Documents shared in this workspace will appear here.</p></div>}
-          <ul className="document-list">{documents.map(document => <li key={document.id}><button type="button" className="document-button" onClick={() => setOpenDocument(document)}><span className="document-icon" aria-hidden="true">▤</span><span className="document-name"><strong>{document.title}</strong><small>Open document</small></span><time dateTime={document.createdAt}>{new Date(document.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</time></button></li>)}</ul>
+          <ul className="document-list">{documents.map(document => <li key={document.id}><button type="button" className="document-button" onClick={() => { if (user.id) saveOfflineContext({ user: { username: user.username, id: user.id }, workspace: selected, document }); setOpenDocument(document); }}><span className="document-icon" aria-hidden="true">▤</span><span className="document-name"><strong>{document.title}</strong><small>Open document</small></span><time dateTime={document.createdAt}>{new Date(document.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</time></button></li>)}</ul>
           {documentCursor && <button className="more" disabled={documentLoading} type="button" onClick={moreDocuments}>{documentLoading ? 'Loading…' : 'Load more documents'} <span aria-hidden="true">→</span></button>}
         </>}
       </section>}{dirty && <span className="sr-only">Unsaved changes</span>}</div>

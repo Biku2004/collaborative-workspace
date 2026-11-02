@@ -113,6 +113,9 @@ class DocumentHttpIntegrationTest {
             assertEquals(200, me.statusCode());
             assertTrue(me.body().contains(userEmail));
             assertFalse(me.body().contains(otherEmail));
+            UUID actualId = jdbc.queryForObject("SELECT id FROM app_users WHERE email = ?", UUID.class, userEmail);
+            assertTrue(me.body().contains("\"id\":\"" + actualId + "\""));
+            assertTrue(me.headers().firstValue("Cache-Control").orElseThrow().contains("no-store"));
             assertEquals(403, post(userClient, base + "/api/documents", "{\"title\":\"old token\"}", userCsrf).statusCode());
             String freshCsrf = token(send(userClient, "GET", base + "/api/csrf", null).body());
             assertEquals(403, post(userClient, base + "/api/dev/users", otherPayload, freshCsrf).statusCode());
@@ -129,7 +132,9 @@ class DocumentHttpIntegrationTest {
             HttpClient bootstrapAgain = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
             String bootstrapCsrf = token(send(bootstrapAgain, "GET", base + "/api/csrf", null).body());
             assertEquals(302, login(bootstrapAgain, base, "learner", "test-only-password", bootstrapCsrf).statusCode());
-            assertTrue(send(bootstrapAgain, "GET", base + "/api/me", null).body().contains("learner"));
+            var bootstrapMe = send(bootstrapAgain, "GET", base + "/api/me", null);
+            assertTrue(bootstrapMe.body().contains("learner"));
+            assertFalse(bootstrapMe.body().contains("\"id\""));
             assertEquals(400, post(client, base + "/api/dev/users", "{\"email\":\"invalid\",\"password\":\"a-long-enough-password\"}", csrf).statusCode());
             assertEquals(400, post(client, base + "/api/dev/users", "{\"email\":\"valid@example.com\",\"password\":\"short\"}", csrf).statusCode());
             assertEquals(400, post(client, base + "/api/dev/users", "{\"email\":\"valid@example.com\",\"password\":\"" + "é".repeat(40) + "\"}", csrf).statusCode());

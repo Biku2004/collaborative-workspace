@@ -2,6 +2,7 @@ export type Workspace = { id: string; name: string; role: 'OWNER' | 'EDITOR' | '
 export type Document = { id: string; workspaceId: string; title: string; createdAt: string; version: number; archived: boolean };
 export type Page<T> = { items: T[]; nextCursor: string | null };
 type Csrf = { headerName: string; token: string };
+export type CurrentUser = { username: string; id?: string };
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -26,11 +27,10 @@ async function checked(path: string, init?: RequestInit): Promise<Response> {
 }
 
 async function csrf(): Promise<Csrf> { return (await checked('/api/csrf')).json() as Promise<Csrf>; }
-export async function currentUser(): Promise<string> {
-  const data = await (await checked('/api/me')).json() as { username: string };
-  return data.username;
+export async function currentUser(): Promise<CurrentUser> {
+  return (await checked('/api/me')).json() as Promise<CurrentUser>;
 }
-export async function login(email: string, password: string): Promise<string> {
+export async function login(email: string, password: string): Promise<CurrentUser> {
   const token = await csrf();
   await call('/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', [token.headerName]: token.token },
     body: new URLSearchParams({ username: email, password }) });

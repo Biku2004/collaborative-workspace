@@ -1,5 +1,7 @@
 # Lesson 24 — Add a plain-text collaborative editor
 
+> [Lesson 25](25-offline-persistence.md) adds local draft persistence and manual retries; descriptions below record the Lesson 24 state.
+
 ## 1. What we built
 
 Two authenticated workspace members can open the same document in separate browser contexts and collaborate on **plain text**. Each tab owns an independent `Y.Doc`. A small custom provider connects it to the Java WebSocket protocol, replays committed updates, submits local Yjs changes, and applies committed remote changes.

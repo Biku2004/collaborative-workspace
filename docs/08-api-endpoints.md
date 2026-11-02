@@ -1,4 +1,4 @@
-# API endpoint reference through Lesson 16
+# API endpoint reference through Lesson 21
 
 This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 
@@ -22,6 +22,7 @@ This table describes the currently implemented routes, not the planned collabora
 | POST | `/api/documents` | Former unscoped creation route | Removed | Returns 404 for an authenticated request with valid CSRF. |
 | GET | `/api/documents/{id}` | Read one document | Any current workspace member | Returns 200 with document metadata, including archived documents; missing, unassigned, and inaccessible documents return 404. |
 | GET | `/api/workspaces/{workspaceId}/documents` | List documents in a workspace | Any current workspace member | Returns 200 with active `items` and `nextCursor`; accepts `limit` (1–100, default 20) and optional `cursor`. Inaccessible workspace gives 404, invalid page parameters give 400. |
+| GET (WebSocket upgrade) | `/api/workspaces/{workspaceId}/socket` | Open a minimal WebSocket greeting | Stored-user session, exact allowed Origin, current workspace member; `dev` only | Send `{"type":"HELLO","version":1}`; receive `WELCOME` with the workspace ID. Then `JOIN`, `TEST_MESSAGE`, and `LEAVE` support temporary document-room messages. `SUBMIT_UPDATE` commits supported updates before `SAVED`; broadcast and replay remain future work. |
 | POST | `/api/dev/users` | Provision a stored user for the learning project | `dev` only; authenticated `learner` bootstrap session and CSRF token | JSON with `email` and `password`. Returns 201 with `id`, normalized `email`, `createdAt`; duplicate email gives 409 and invalid input gives 400. The response never includes the password or hash. |
 
 In the default non-`dev` profile, `GET /api/status` is allowed and protected routes are denied. The local dev profile binds to `127.0.0.1` by default. Exact security responses depend on which filter rejects a request: an anonymous protected API GET returns 401, while a POST without a CSRF token can return 403 before authentication is checked.
@@ -31,3 +32,9 @@ For commands, cookies, login, logout and workspace examples, see [Lesson 8](less
 Creation of workspaces and documents accepts an optional `Idempotency-Key` header. For reliable retries, send the same key and normalized input: concurrent or later retries return the original 201 body. Reusing a key with different input gives 409 `IDEMPOTENCY_CONFLICT`. Keys contain 1–128 ASCII letters, digits, underscores or hyphens and are scoped by user and operation (including workspace for documents). Document creation rechecks current editing permission even on replay. Without the header, each request creates a new resource.
 
 All API errors use `{ "code": "...", "message": "..." }` with `Cache-Control: no-store`. Expected codes include `INVALID_REQUEST`, `AUTHENTICATION_REQUIRED`, `ACCESS_DENIED`, `NOT_FOUND`, `DOCUMENT_CONFLICT`, `LAST_OWNER`, `DUPLICATE_USER`, `IDEMPOTENCY_CONFLICT`, `SERVICE_UNAVAILABLE` (503), and `INTERNAL_ERROR` (500). Login/logout HTML and redirect flows retain their existing behavior. See the [quality fixes guide](09-quality-hardening.md) for verification and limitations.
+
+The WebSocket greeting and session cleanup are explained in [Lesson 19](lessons/19-authenticate-websocket.md).
+
+The room protocol and its bounds are explained in [Lesson 20](lessons/20-document-rooms-and-bounded-messaging.md).
+
+The versioned update/acknowledgement contract is described in [Lesson 21](lessons/21-commit-before-acknowledgement.md).

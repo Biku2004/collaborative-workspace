@@ -1,11 +1,18 @@
 import * as Y from 'yjs';
+import * as decoding from 'lib0/decoding';
 import { InputError, LIMITS } from './protocol.js';
 
 // Prototype only: store.pendingStructs/pendingDs are version-specific Yjs internals.
 export function reconstruct(updates: readonly Uint8Array[]) {
   const doc = new Y.Doc();
   try {
-    try { for (const update of updates) Y.applyUpdate(doc, update); }
+    try {
+      for (const update of updates) {
+        const decoder = decoding.createDecoder(update);
+        Y.readUpdate(decoder, doc, null);
+        if (decoding.hasContent(decoder)) throw new InputError('INVALID_UPDATE');
+      }
+    }
     catch { throw new InputError('INVALID_UPDATE'); }
     if (doc.store.pendingStructs != null || doc.store.pendingDs != null) throw new InputError('MISSING_DEPENDENCY');
     if ([...doc.share.keys()].some(key => key !== 'content')) throw new InputError('UNSUPPORTED_DOCUMENT');

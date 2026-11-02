@@ -94,6 +94,10 @@ test('malformed, oversized, unsupported and invalid requests are rejected', asyn
     doc.destroy();
     assert.equal(unsupported.status, 422);
     assert.equal(unsupported.body.code, 'UNSUPPORTED_DOCUMENT');
+    const valid = Buffer.from(fixtures()[0]!, 'base64');
+    const trailing = await post(url, { version: 1, updates: [b64(Buffer.concat([valid, Buffer.from([255])]))] });
+    assert.equal(trailing.status, 422);
+    assert.equal(trailing.body.code, 'INVALID_UPDATE');
     const map = new Y.Doc(); map.getMap('content').set('hidden', 'value');
     const hiddenMap = await post(url, { version: 1, updates: [b64(Y.encodeStateAsUpdate(map))] });
     map.destroy();

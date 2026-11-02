@@ -40,6 +40,10 @@ public class DocumentRepository {
         return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM documents WHERE workspace_id = ? AND id = ?)", Boolean.class, workspaceId, documentId));
     }
 
+    public boolean canRead(UUID workspaceId, UUID documentId, UUID userId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM documents d JOIN workspace_members m ON m.workspace_id = d.workspace_id WHERE d.workspace_id = ? AND d.id = ? AND m.user_id = ?)", Boolean.class, workspaceId, documentId, userId));
+    }
+
     public Optional<Document> rename(UUID workspaceId, UUID id, long version, String title) {
         return jdbc.query("UPDATE documents SET title = ?, version = version + 1 WHERE workspace_id = ? AND id = ? AND version = ? AND NOT archived RETURNING id, workspace_id, title, created_at, version, archived",
                 this::mapDocument, title, workspaceId, id, version).stream().findFirst();

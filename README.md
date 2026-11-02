@@ -1,6 +1,6 @@
 # Collaborative Workspace — learning and implementation plan
 
-Prepared 29 October 2026. Status: Lessons 1–18 are implemented and verified locally. Stored users can log in, manage workspace membership, and create, read, list, rename and archive authorized workspace documents; real-time collaboration is a later milestone.
+Prepared 29 October 2026. Status: Lessons 1–21 are implemented and verified locally. Stored users can log in, manage workspace membership, and create, read, list, rename and archive authorized workspace documents; real-time collaboration is a later milestone.
 
 We will assume no prior experience with Spring and explain Java concepts whenever they are needed. We will implement one feature per lesson and verify it before moving on. The goal is a project you can build, debug, and defend in an interview.
 
@@ -23,7 +23,11 @@ The supplied attachment is the project brief. We will provide the beginner-frien
 | [Lesson 16: Rename and archive documents](docs/lessons/16-rename-and-archive-documents.md) | Version checks, archive visibility and conflicting updates |
 | [Lesson 17: Two Yjs replicas](docs/lessons/17-yjs-two-local-replicas.md) | Runnable CRDT experiments, synchronization and failure cases |
 | [Lesson 18: Private Yjs engine](docs/lessons/18-private-yjs-engine.md) | Bounded candidate reconstruction and failure tests |
+| [Lesson 19: Authenticate a WebSocket](docs/lessons/19-authenticate-websocket.md) | Session, Origin and membership checks for a versioned greeting |
+| [Lesson 20: Document rooms](docs/lessons/20-document-rooms-and-bounded-messaging.md) | Room isolation, permission rechecks and bounded messaging |
+| [Lesson 21: Commit before acknowledgement](docs/lessons/21-commit-before-acknowledgement.md) | Durable updates, idempotent retries and transaction boundaries |
 | [Quality review fixes](docs/09-quality-hardening.md) | Strict versions, test isolation, consistent errors, safe retries and bounded lists |
+| [Security and quality checkpoint](docs/10-security-quality-checkpoint.md) | Verified boundaries, failure tests and outstanding risks through Lesson 21 |
 | [Current API endpoints](docs/08-api-endpoints.md) | Methods, routes, access requirements and expected responses through Lesson 16 |
 | [1. Architecture and foundations](docs/01-architecture.md) | Expanded product idea, concepts, recommended architecture, alternatives, and corrections to the brief |
 | [2. Data, protocol, and algorithms](docs/02-data-and-protocol.md) | Tables, permissions, API contracts, edit/reconnect/restore flows, and transaction boundaries |

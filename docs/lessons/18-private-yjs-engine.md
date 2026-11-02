@@ -23,11 +23,11 @@ The arrows show a future boundary, not an implemented integration. A 200 respons
 
 The complete code is in `experiments/yjs-private-engine`:
 
-1. `package.json` and `package-lock.json` pin Yjs 13.6.33 and the TypeScript toolchain.
+1. `package.json` and `package-lock.json` pin Yjs 13.6.33, lib0 0.2.119 and the TypeScript toolchain.
 2. `src/protocol.ts` validates the JSON shape, canonical padded Base64, update count and decoded byte limits.
 3. `src/server.ts` accepts loopback HTTP requests, limits active work and body size, starts a worker with a deadline, and returns safe error codes.
 4. `src/worker.ts` calls `reconstruct.ts` in a worker thread. The worker receives only the supplied updates; it has no shared document cache.
-5. `src/reconstruct.ts` applies updates to a new `Y.Doc`, checks for pending dependencies and unsupported content, and returns text and an encoded checkpoint. The document is destroyed afterward.
+5. `src/reconstruct.ts` reads updates with a bounded decoder, rejects trailing bytes, checks for pending dependencies and unsupported content, and returns text and an encoded checkpoint. The document is destroyed afterward.
 6. `test/engine.test.ts` sends real HTTP requests and checks reconstruction and failures. `test/hanging-worker.ts` lets the timeout and capacity tests reproduce a stuck worker.
 7. `fixtures/plain-text.properties` is shared by Node and `backend/src/test/java/com/example/collaborativeworkspace/YjsFixtureTransportTest.java`. Java's standard Base64 decoder/encoder preserves the fixture bytes; Node interprets them as Yjs and obtains `Hello Java`.
 

@@ -30,9 +30,7 @@ class DocumentHttpIntegrationTest {
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
-        String url = required("WORKSPACE_TEST_DB_URL");
-        String developmentUrl = System.getenv("WORKSPACE_DB_URL");
-        if (url.equals(developmentUrl)) throw new IllegalStateException("Test and development database URLs must differ");
+        String url = TestDatabaseGuard.verifiedUrl();
         registry.add("spring.datasource.url", () -> url);
         registry.add("spring.datasource.username", () -> required("WORKSPACE_TEST_DB_USER"));
         registry.add("spring.datasource.password", () -> required("WORKSPACE_TEST_DB_PASSWORD"));

@@ -1,6 +1,11 @@
 # Maven build output
 backend/target/
 
+# Node experiment dependencies and compiled output
+node_modules/
+experiments/yjs-two-replicas/dist/
+experiments/yjs-private-engine/dist/
+
 # Local editor and operating system files
 .idea/
 .vscode/

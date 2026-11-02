@@ -1,10 +1,10 @@
 # 7. Roadmap after Lesson 7
 
-This is a **plan** for the remaining features. Lessons 8–16 are complete; Lessons 17–37 remain planned. Lesson numbers below continue the [learning checklist](00-learning-checklist.md); the broader architecture guide uses different **step** numbers. One lesson delivers one primary capability, although a difficult lesson may take more than one session. We implement, explain and verify each lesson before moving to the next.
+This is a **plan** for the remaining features. Lessons 8–18 are complete; Lessons 19–37 remain planned. Lesson numbers below continue the [learning checklist](00-learning-checklist.md); the broader architecture guide uses different **step** numbers. One lesson delivers one primary capability, although a difficult lesson may take more than one session. We implement, explain and verify each lesson before moving to the next.
 
 ## Where we are now
 
-Lessons 1–7 created a Spring Boot application, a document API, validation and PostgreSQL persistence. Lesson 8 added a temporary local development login and CSRF protection. Lesson 9 added development-only provisioning of stored user accounts and password hashes; Lesson 10 connects those accounts to login; Lesson 11 covers logout and session expiry. Lesson 12 adds workspace creation, Lesson 13 adds owner-managed memberships, and Lesson 14 scopes new document writes to a workspace. Local development uses the existing PostgreSQL server, with separate development and test databases. Lesson 15 adds membership-authorized document reads and paginated lists. Lesson 16 adds version-checked rename and archive; the development profile is only for local learning. Legacy documents remain unassigned. The frontend and collaboration features are not yet implemented.
+Lessons 1–7 created a Spring Boot application, a document API, validation and PostgreSQL persistence. Lesson 8 added a temporary local development login and CSRF protection. Lesson 9 added development-only provisioning of stored user accounts and password hashes; Lesson 10 connects those accounts to login; Lesson 11 covers logout and session expiry. Lesson 12 adds workspace creation, Lesson 13 adds owner-managed memberships, and Lesson 14 scopes new document writes to a workspace. Local development uses the existing PostgreSQL server, with separate development and test databases. Lesson 15 adds membership-authorized document reads and paginated lists. Lesson 16 adds version-checked rename and archive; the development profile is only for local learning. Legacy documents remain unassigned. Lesson 17 adds an isolated local Yjs experiment. Lesson 18 adds a constrained private reconstruction prototype; the frontend and networked collaboration features are not yet implemented, and the provider compatibility gate remains open.
 
 Every coding lesson will include: the problem and a small example; required Java, Spring or database concepts; request/data flow and invariants; exact files and complete code; Windows PowerShell commands; expected output; a success and meaningful negative/failure test; common mistakes; interview questions and answers; and a checkpoint before moving on. The implementation may adjust file names as the project grows.
 
@@ -242,4 +242,4 @@ Comments, mentions, exports, object storage, Kafka and explicit room ownership a
 
 ## Next lesson
 
-Continue with **Lesson 17: learn Yjs with two local replicas**. Version-checked metadata updates are described in the [Lesson 16 guide](lessons/16-rename-and-archive-documents.md).
+Continue with **Lesson 19: authenticate a WebSocket connection**. The reconstruction prototype and open compatibility gate are described in the [Lesson 18 guide](lessons/18-private-yjs-engine.md).

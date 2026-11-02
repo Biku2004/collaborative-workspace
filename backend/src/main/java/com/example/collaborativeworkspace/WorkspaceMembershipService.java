@@ -20,10 +20,15 @@ public class WorkspaceMembershipService {
 
     @Transactional(readOnly = true)
     public List<WorkspaceMember> list(UUID workspaceId, String actorEmail) {
-        UUID actor = actorId(actorEmail);
-        List<WorkspaceMember> members = workspaces.listMembers(workspaceId, actor);
-        if (members.isEmpty()) throw new WorkspaceResourceNotFoundException();
-        return members;
+        return list(workspaceId, actorEmail, 20, null).items();
+    }
+
+    @Transactional(readOnly = true)
+    public PageSlice<WorkspaceMember> list(UUID workspaceId, String actorEmail, int limit, UUID after) {
+        PageSlice.validateLimit(limit);
+        List<WorkspaceMember> rows = workspaces.listMembers(workspaceId, actorId(actorEmail), limit + 1, after);
+        if (rows.isEmpty()) throw new WorkspaceResourceNotFoundException();
+        return PageSlice.from(rows.stream().filter(java.util.Objects::nonNull).toList(), limit, WorkspaceMember::userId);
     }
 
     // Every membership writer must lock the workspace first and recheck permissions afterwards.

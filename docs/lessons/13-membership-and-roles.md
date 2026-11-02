@@ -1,5 +1,7 @@
 # Lesson 13: Membership and role rules
 
+> Current list endpoints default to 20 entries (maximum 100). Send `limit` and `after`; follow the `X-Next-Cursor` response header until absent. See [quality fixes](../09-quality-hardening.md).
+
 ## 1. What we built
 
 Workspace owners can now add an existing user, change a member's role, and remove a member. Any current workspace member can list that workspace's members. A workspace must retain at least one `OWNER`: an attempt to remove or demote the final owner returns **409 Conflict**.

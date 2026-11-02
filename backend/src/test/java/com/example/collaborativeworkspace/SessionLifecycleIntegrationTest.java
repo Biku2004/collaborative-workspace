@@ -30,8 +30,7 @@ class SessionLifecycleIntegrationTest {
 
     @DynamicPropertySource
     static void settings(DynamicPropertyRegistry registry) {
-        String url = required("WORKSPACE_TEST_DB_URL");
-        if (url.equals(System.getenv("WORKSPACE_DB_URL"))) throw new IllegalStateException("A separate test database is required");
+        String url = TestDatabaseGuard.verifiedUrl();
         registry.add("spring.datasource.url", () -> url);
         registry.add("spring.datasource.username", () -> required("WORKSPACE_TEST_DB_USER"));
         registry.add("spring.datasource.password", () -> required("WORKSPACE_TEST_DB_PASSWORD"));

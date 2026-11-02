@@ -13,8 +13,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 class LegacyDocumentMigrationTest {
     @Test
     void v4PreservesPreexistingDocumentsAndRejectsNewUnscopedRows() throws Exception {
-        String url = required("WORKSPACE_TEST_DB_URL"), user = required("WORKSPACE_TEST_DB_USER"), password = required("WORKSPACE_TEST_DB_PASSWORD");
-        if (url.equals(System.getenv("WORKSPACE_DB_URL"))) throw new IllegalStateException("A separate test database is required");
+        String url = TestDatabaseGuard.verifiedUrl(), user = required("WORKSPACE_TEST_DB_USER"), password = required("WORKSPACE_TEST_DB_PASSWORD");
         String schema = "lesson14_" + UUID.randomUUID().toString().replace("-", "");
         UUID legacyId = UUID.randomUUID();
         try {
@@ -51,8 +50,7 @@ class LegacyDocumentMigrationTest {
 
     @Test
     void v6PreservesExistingScopedDocumentMetadata() throws Exception {
-        String url = required("WORKSPACE_TEST_DB_URL"), user = required("WORKSPACE_TEST_DB_USER"), password = required("WORKSPACE_TEST_DB_PASSWORD");
-        if (url.equals(System.getenv("WORKSPACE_DB_URL"))) throw new IllegalStateException("A separate test database is required");
+        String url = TestDatabaseGuard.verifiedUrl(), user = required("WORKSPACE_TEST_DB_USER"), password = required("WORKSPACE_TEST_DB_PASSWORD");
         String schema = "lesson16_" + UUID.randomUUID().toString().replace("-", "");
         UUID actor = UUID.randomUUID(), workspace = UUID.randomUUID(), document = UUID.randomUUID();
         try {

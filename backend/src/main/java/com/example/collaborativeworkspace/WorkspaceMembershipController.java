@@ -23,8 +23,13 @@ public class WorkspaceMembershipController {
     public WorkspaceMembershipController(WorkspaceMembershipService service) { this.service = service; }
 
     @GetMapping
-    public ResponseEntity<List<WorkspaceMember>> list(@PathVariable UUID workspaceId, Authentication authentication) {
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.list(workspaceId, authentication.getName()));
+    public ResponseEntity<List<WorkspaceMember>> list(@PathVariable UUID workspaceId, Authentication authentication,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "20") int limit,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) java.util.UUID after) {
+        PageSlice<WorkspaceMember> page = service.list(workspaceId, authentication.getName(), limit, after);
+        var response = ResponseEntity.ok().cacheControl(CacheControl.noStore());
+        if (page.nextCursor() != null) response.header("X-Next-Cursor", page.nextCursor().toString());
+        return response.body(page.items());
     }
 
     @PostMapping

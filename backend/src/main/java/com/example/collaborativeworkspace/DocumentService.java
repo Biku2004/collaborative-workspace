@@ -12,17 +12,25 @@ public class DocumentService {
     private final DocumentRepository repository;
     private final WorkspaceRepository workspaces;
     private final UserRepository users;
-    public DocumentService(DocumentRepository repository, WorkspaceRepository workspaces, UserRepository users) {
+    private final IdempotencyService idempotency;
+    public DocumentService(DocumentRepository repository, WorkspaceRepository workspaces, UserRepository users, IdempotencyService idempotency) {
         this.repository = repository; this.workspaces = workspaces; this.users = users;
+        this.idempotency = idempotency;
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Document create(UUID workspaceId, String authenticatedEmail, String title) {
+        return create(workspaceId, authenticatedEmail, title, null);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Document create(UUID workspaceId, String authenticatedEmail, String title, String requestKey) {
         UUID userId = users.findIdByEmail(authenticatedEmail).orElseThrow(() -> new AccessDeniedException("User is not available"));
         if (!workspaces.lockWorkspace(workspaceId)) throw new WorkspaceResourceNotFoundException();
         WorkspaceRole role = workspaces.memberRole(workspaceId, userId).orElseThrow(WorkspaceResourceNotFoundException::new);
         if (role == WorkspaceRole.VIEWER) throw new AccessDeniedException("Editing permission required");
-        return repository.create(UUID.randomUUID(), workspaceId, title.strip());
+        return idempotency.execute(userId, "document:" + workspaceId, requestKey, title.strip(), Document.class,
+                () -> repository.create(UUID.randomUUID(), workspaceId, title.strip()));
     }
 
     @Transactional(readOnly = true)

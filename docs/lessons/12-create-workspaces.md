@@ -1,5 +1,7 @@
 # Lesson 12: Create workspaces
 
+> Current list endpoints default to 20 entries (maximum 100). Send `limit` and `after`; follow the `X-Next-Cursor` response header until absent. See [quality fixes](../09-quality-hardening.md).
+
 ## 1. What are we building?
 
 A **workspace** is the container that will eventually hold a team's documents and members. In this lesson, a stored user can create a workspace and list the workspaces in which they are a member. The creator becomes its first **OWNER**.

@@ -39,8 +39,7 @@ class WorkspaceIntegrationTest {
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
-        String url = required("WORKSPACE_TEST_DB_URL");
-        if (url.equals(System.getenv("WORKSPACE_DB_URL"))) throw new IllegalStateException("A separate test database is required");
+        String url = TestDatabaseGuard.verifiedUrl();
         registry.add("spring.datasource.url", () -> url);
         registry.add("spring.datasource.username", () -> required("WORKSPACE_TEST_DB_USER"));
         registry.add("spring.datasource.password", () -> required("WORKSPACE_TEST_DB_PASSWORD"));
@@ -342,6 +341,14 @@ class WorkspaceIntegrationTest {
             assertTrue(created.body().contains("\"version\":0"));
             assertTrue(created.body().contains("\"archived\":false"));
             String id = field(created.body(), "id"), url = listUrl + "/" + id;
+            for (String version : java.util.List.of("0.9", "-0.9", "0.0", "-1", "null")) {
+                assertEquals(400, patch(ownerClient, url, "{\"title\":\"Invalid\",\"version\":" + version + "}", ownerCsrf).statusCode());
+                assertEquals(400, post(ownerClient, url + "/archive", "{\"version\":" + version + "}", ownerCsrf).statusCode());
+            }
+            assertEquals(400, post(ownerClient, url + "/archive", "{}", ownerCsrf).statusCode());
+            assertEquals("Original", jdbc.queryForObject("SELECT title FROM documents WHERE id = ?", String.class, UUID.fromString(id)));
+            assertEquals(0L, jdbc.queryForObject("SELECT version FROM documents WHERE id = ?", Long.class, UUID.fromString(id)));
+            assertFalse(jdbc.queryForObject("SELECT archived FROM documents WHERE id = ?", Boolean.class, UUID.fromString(id)));
             Document other = documentService.create(outsiderWorkspaceId, outsider, "Private");
             assertEquals(404, patch(ownerClient, listUrl + "/" + other.id(), "{\"title\":\"Cross workspace\",\"version\":0}", ownerCsrf).statusCode());
             assertEquals(404, post(ownerClient, listUrl + "/" + other.id() + "/archive", "{\"version\":0}", ownerCsrf).statusCode());
@@ -446,6 +453,165 @@ class WorkspaceIntegrationTest {
                 jdbc.update("DELETE FROM workspaces WHERE id = ?", workspaceId);
             }
             jdbc.update("DELETE FROM app_users WHERE id IN (?, ?)", ownerId, editorId);
+        }
+    }
+
+    @Test
+    void apiErrorsAreConsistentAndInfrastructureDetailsStayPrivate() throws Exception {
+        UUID actor = UUID.randomUUID();
+        String email = "errors-" + actor + "@example.com", base = "http://127.0.0.1:" + port;
+        try {
+            users.create(actor, email, encoder.encode("test-user-password"));
+            var anonymous = get(client(), base + "/api/workspaces");
+            assertEquals(401, anonymous.statusCode());
+            assertTrue(anonymous.body().contains("\"code\":\"AUTHENTICATION_REQUIRED\""));
+            HttpClient session = client(); login(session, base, email, "test-user-password");
+            var denied = post(session, base + "/api/workspaces", "{}", null);
+            assertEquals(403, denied.statusCode());
+            assertTrue(denied.body().contains("\"code\":\"ACCESS_DENIED\""));
+            String csrf = token(get(session, base + "/api/csrf").body());
+            var malformed = post(session, base + "/api/workspaces", "{", csrf);
+            assertEquals(400, malformed.statusCode());
+            assertTrue(malformed.body().contains("\"code\":\"INVALID_REQUEST\""));
+            for (RuntimeException failure : java.util.List.of(
+                    new org.springframework.dao.DataAccessResourceFailureException("sensitive database details"),
+                    new org.springframework.dao.QueryTimeoutException("sensitive timeout details"),
+                    new IllegalStateException("sensitive internal details"))) {
+                doThrow(failure).when(workspaces).findByMember(actor, 21, null);
+                var response = get(session, base + "/api/workspaces");
+                assertEquals(failure instanceof IllegalStateException ? 500 : 503, response.statusCode());
+                assertTrue(response.body().contains("\"code\":"));
+                assertTrue(response.body().contains("\"message\":"));
+                assertFalse(response.body().contains("sensitive"));
+                assertEquals("no-store", response.headers().firstValue("Cache-Control").orElseThrow());
+            }
+        } finally { jdbc.update("DELETE FROM app_users WHERE id = ?", actor); }
+    }
+
+    @Test
+    void keyedCreationReplaysCommittedResultsAndRollsBackFailures() throws Exception {
+        UUID actor = UUID.randomUUID(), editorId = UUID.randomUUID();
+        String email = "retry-" + actor + "@example.com", editor = "retry-editor-" + editorId + "@example.com";
+        try {
+            users.create(actor, email, encoder.encode("test-user-password"));
+            users.create(editorId, editor, encoder.encode("test-user-password"));
+            String base = "http://127.0.0.1:" + port;
+            HttpClient session = client(); login(session, base, email, "test-user-password");
+            String csrf = token(get(session, base + "/api/csrf").body());
+            var request = HttpRequest.newBuilder(URI.create(base + "/api/workspaces"))
+                    .header("Content-Type", "application/json").header("X-CSRF-TOKEN", csrf).header("Idempotency-Key", "same-request")
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"name\":\"Retry workspace\"}")).build();
+            var first = session.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+            var second = session.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+            assertEquals(201, first.get(10, java.util.concurrent.TimeUnit.SECONDS).statusCode());
+            assertEquals(201, second.get(10, java.util.concurrent.TimeUnit.SECONDS).statusCode());
+            assertEquals(first.join().body(), second.join().body());
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM workspaces WHERE created_by = ?", Integer.class, actor));
+            UUID workspace = UUID.fromString(field(first.join().body(), "id"));
+            var conflictRequest = HttpRequest.newBuilder(URI.create(base + "/api/workspaces"))
+                    .header("Content-Type", "application/json").header("X-CSRF-TOKEN", csrf).header("Idempotency-Key", "same-request")
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"name\":\"Different\"}")).build();
+            var conflict = session.send(conflictRequest, HttpResponse.BodyHandlers.ofString());
+            assertEquals(409, conflict.statusCode());
+            assertTrue(conflict.body().contains("\"code\":\"IDEMPOTENCY_CONFLICT\""));
+            assertThrows(IdempotencyConflictException.class, () -> service.create(email, "Different", "same-request"));
+            membership.setRole(workspace, email, new ChangeWorkspaceMemberRequest(editor, WorkspaceRole.EDITOR));
+            Document original = documentService.create(workspace, editor, "Notes", "doc-retry");
+            Document replay = documentService.create(workspace, editor, "Notes", "doc-retry");
+            assertEquals(original, replay); // Simulates retry after the original response was lost.
+            var retryOne = java.util.concurrent.CompletableFuture.supplyAsync(() -> documentService.create(workspace, editor, "Concurrent", "concurrent-doc"));
+            var retryTwo = java.util.concurrent.CompletableFuture.supplyAsync(() -> documentService.create(workspace, editor, "Concurrent", "concurrent-doc"));
+            assertEquals(retryOne.get(5, java.util.concurrent.TimeUnit.SECONDS), retryTwo.get(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM documents WHERE workspace_id = ?", Integer.class, workspace));
+            assertThrows(IdempotencyConflictException.class, () -> documentService.create(workspace, editor, "Different", "doc-retry"));
+            membership.remove(workspace, email, editorId);
+            assertThrows(WorkspaceResourceNotFoundException.class, () -> documentService.create(workspace, editor, "Notes", "doc-retry"));
+            doThrow(new DataIntegrityViolationException("simulated rollback")).when(workspaces).insertOwner(any(), any());
+            assertThrows(DataIntegrityViolationException.class, () -> service.create(email, "Failed", "rollback"));
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM creation_requests WHERE user_id = ? AND request_key = 'rollback'", Integer.class, actor));
+        } finally {
+            jdbc.update("DELETE FROM documents WHERE workspace_id IN (SELECT id FROM workspaces WHERE created_by = ?)", actor);
+            jdbc.update("DELETE FROM workspaces WHERE created_by = ?", actor);
+            jdbc.update("DELETE FROM app_users WHERE id IN (?, ?)", actor, editorId);
+        }
+    }
+
+    @Test
+    void workspaceAndMemberListsAreBoundedAndPageWithoutDuplicates() throws Exception {
+        UUID actor = UUID.randomUUID(), other = UUID.randomUUID();
+        String email = "pages-" + actor + "@example.com", otherEmail = "pages-other-" + other + "@example.com";
+        try {
+            users.create(actor, email, encoder.encode("test-user-password"));
+            users.create(other, otherEmail, encoder.encode("test-user-password"));
+            UUID workspace = service.create(email, "One").id();
+            service.create(email, "Two");
+            service.create(otherEmail, "Private");
+            membership.setRole(workspace, email, new ChangeWorkspaceMemberRequest(otherEmail, WorkspaceRole.VIEWER));
+            String base = "http://127.0.0.1:" + port;
+            HttpClient session = client(); login(session, base, email, "test-user-password");
+            var first = get(session, base + "/api/workspaces?limit=1");
+            assertEquals(200, first.statusCode());
+            String cursor = first.headers().firstValue("X-Next-Cursor").orElseThrow();
+            var next = get(session, base + "/api/workspaces?limit=1&after=" + cursor);
+            assertEquals(200, next.statusCode());
+            assertNotEquals(field(first.body(), "id"), field(next.body(), "id"));
+            assertTrue(next.headers().firstValue("X-Next-Cursor").isEmpty());
+            assertFalse((first.body() + next.body()).contains("Private"));
+            String members = base + "/api/workspaces/" + workspace + "/members";
+            var firstMember = get(session, members + "?limit=1");
+            String memberCursor = firstMember.headers().firstValue("X-Next-Cursor").orElseThrow();
+            var nextMember = get(session, members + "?limit=1&after=" + memberCursor);
+            assertNotEquals(field(firstMember.body(), "userId"), field(nextMember.body(), "userId"));
+            assertTrue(nextMember.headers().firstValue("X-Next-Cursor").isEmpty());
+            assertEquals("[]", get(session, members + "?after=ffffffff-ffff-ffff-ffff-ffffffffffff").body());
+            assertEquals(400, get(session, base + "/api/workspaces?limit=101").statusCode());
+            assertEquals(400, get(session, members + "?limit=0").statusCode());
+            assertEquals(400, get(session, members + "?after=bad").statusCode());
+        } finally {
+            jdbc.update("DELETE FROM workspaces WHERE created_by IN (?, ?)", actor, other);
+            jdbc.update("DELETE FROM app_users WHERE id IN (?, ?)", actor, other);
+        }
+    }
+
+    @Test
+    void measuresWorkspaceLockContentionWhileOtherWorkspaceWritesProceed() throws Exception {
+        UUID actor = UUID.randomUUID();
+        String email = "locks-" + actor + "@example.com";
+        var release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CompletableFuture<Void> holder = null;
+        java.util.concurrent.CompletableFuture<Document> waiting = null;
+        try {
+            users.create(actor, email, encoder.encode("test-user-password"));
+            UUID workspace = service.create(email, "Busy").id(), separate = service.create(email, "Independent").id();
+            Document document = documentService.create(workspace, email, "Original");
+            var held = new java.util.concurrent.CountDownLatch(1);
+            holder = java.util.concurrent.CompletableFuture.runAsync(() ->
+                new org.springframework.transaction.support.TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                    workspaces.lockWorkspace(workspace); held.countDown();
+                    try { if (!release.await(10, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("Lock measurement timed out"); }
+                    catch (InterruptedException ex) { Thread.currentThread().interrupt(); throw new IllegalStateException(ex); }
+                }));
+            assertTrue(held.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            var attempted = new java.util.concurrent.CountDownLatch(1);
+            doAnswer(invocation -> { attempted.countDown(); return invocation.callRealMethod(); }).when(workspaces).lockWorkspace(workspace);
+            long started = System.nanoTime();
+            waiting = java.util.concurrent.CompletableFuture.supplyAsync(() -> documentService.rename(workspace, document.id(), email, new RenameDocumentRequest("After lock", 0L)));
+            assertTrue(attempted.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            var pending = waiting;
+            assertThrows(java.util.concurrent.TimeoutException.class, () -> pending.get(250, java.util.concurrent.TimeUnit.MILLISECONDS));
+            var independent = java.util.concurrent.CompletableFuture.supplyAsync(() -> documentService.create(separate, email, "Independent write"));
+            assertNotNull(independent.get(5, java.util.concurrent.TimeUnit.SECONDS));
+            release.countDown();
+            assertEquals(1, waiting.get(5, java.util.concurrent.TimeUnit.SECONDS).version());
+            holder.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            System.out.println("Controlled workspace lock wait (ms): " + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+        } finally {
+            release.countDown();
+            if (holder != null) holder.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            if (waiting != null) waiting.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            jdbc.update("DELETE FROM documents WHERE workspace_id IN (SELECT id FROM workspaces WHERE created_by = ?)", actor);
+            jdbc.update("DELETE FROM workspaces WHERE created_by = ?", actor);
+            jdbc.update("DELETE FROM app_users WHERE id = ?", actor);
         }
     }
 

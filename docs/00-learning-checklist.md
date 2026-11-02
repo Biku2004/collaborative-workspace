@@ -32,8 +32,8 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 - [ ] Expand authentication and sessions in later lessons.
 - [ ] Add workspaces and member roles; test that users cannot access another workspace.
 - [ ] Associate documents with workspaces and enforce permissions.
-- [ ] Learn Yjs with a small plain-text collaboration experiment.
-- [ ] Add a private Yjs-compatible document engine and test compatibility.
+- [x] **Lesson 17 — Two local Yjs replicas.** See [Lesson 17](lessons/17-yjs-two-local-replicas.md). Concurrent changes, reordering, duplicate delivery, deletions and state vectors are tested.
+- [x] **Lesson 18 — Prototype a private Yjs document engine.** See [Lesson 18](lessons/18-private-yjs-engine.md). Candidate reconstruction and initial byte transport are tested; the full provider compatibility gate remains open.
 - [ ] Open an authenticated WebSocket and introduce the collaboration protocol.
 - [ ] Save and broadcast updates, then add retry, reconnection and offline support in separate lessons.
 - [ ] Add the required TipTap rich-text editor, followed by collaborator presence.

@@ -21,10 +21,10 @@ public class WorkspaceRepository {
         jdbc.update("INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, 'OWNER')", workspaceId, userId);
     }
 
-    public List<Workspace> findByMember(UUID userId) {
-        return jdbc.query("SELECT w.id, w.name, w.created_at, m.role FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id WHERE m.user_id = ? ORDER BY w.created_at, w.id",
+    public List<Workspace> findByMember(UUID userId, int limit, UUID after) {
+        return jdbc.query("SELECT w.id, w.name, w.created_at, m.role FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id WHERE m.user_id = ? AND (?::uuid IS NULL OR w.id > ?::uuid) ORDER BY w.id LIMIT ?",
                 (rs, row) -> new Workspace(rs.getObject("id", UUID.class), rs.getString("name"),
-                        rs.getTimestamp("created_at").toInstant(), rs.getString("role")), userId);
+                        rs.getTimestamp("created_at").toInstant(), rs.getString("role")), userId, after, after, limit);
     }
 
     public boolean lockWorkspace(UUID workspaceId) {
@@ -48,8 +48,8 @@ public class WorkspaceRepository {
         jdbc.update("DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?", workspaceId, userId);
     }
 
-    public List<WorkspaceMember> listMembers(UUID workspaceId, UUID actor) {
-        return jdbc.query("SELECT u.id, u.email, m.role FROM workspace_members actor JOIN workspace_members m ON m.workspace_id = actor.workspace_id JOIN app_users u ON u.id = m.user_id WHERE actor.workspace_id = ? AND actor.user_id = ? ORDER BY u.email, u.id",
-                (rs, row) -> new WorkspaceMember(rs.getObject("id", UUID.class), rs.getString("email"), WorkspaceRole.valueOf(rs.getString("role"))), workspaceId, actor);
+    public List<WorkspaceMember> listMembers(UUID workspaceId, UUID actor, int limit, UUID after) {
+        return jdbc.query("SELECT u.id, u.email, m.role FROM workspace_members actor LEFT JOIN workspace_members m ON m.workspace_id = actor.workspace_id AND (?::uuid IS NULL OR m.user_id > ?::uuid) LEFT JOIN app_users u ON u.id = m.user_id WHERE actor.workspace_id = ? AND actor.user_id = ? ORDER BY u.id LIMIT ?",
+                (rs, row) -> rs.getObject("id") == null ? null : new WorkspaceMember(rs.getObject("id", UUID.class), rs.getString("email"), WorkspaceRole.valueOf(rs.getString("role"))), after, after, workspaceId, actor, limit);
     }
 }

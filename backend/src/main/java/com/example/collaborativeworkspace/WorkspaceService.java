@@ -10,24 +10,39 @@ import org.springframework.transaction.annotation.Transactional;
 public class WorkspaceService {
     private final WorkspaceRepository workspaces;
     private final UserRepository users;
+    private final IdempotencyService idempotency;
 
-    public WorkspaceService(WorkspaceRepository workspaces, UserRepository users) {
+    public WorkspaceService(WorkspaceRepository workspaces, UserRepository users, IdempotencyService idempotency) {
         this.workspaces = workspaces;
         this.users = users;
+        this.idempotency = idempotency;
     }
 
     @Transactional
     public Workspace create(String authenticatedEmail, String name) {
+        return create(authenticatedEmail, name, null);
+    }
+
+    @Transactional
+    public Workspace create(String authenticatedEmail, String name, String requestKey) {
         UUID userId = userId(authenticatedEmail);
+        return idempotency.execute(userId, "workspace", requestKey, name.strip(), Workspace.class, () -> {
         UUID workspaceId = UUID.randomUUID();
         Workspace workspace = workspaces.insertWorkspace(workspaceId, name.strip(), userId);
         workspaces.insertOwner(workspaceId, userId);
         return workspace;
+        });
     }
 
     @Transactional(readOnly = true)
     public List<Workspace> list(String authenticatedEmail) {
-        return workspaces.findByMember(userId(authenticatedEmail));
+        return list(authenticatedEmail, 20, null).items();
+    }
+
+    @Transactional(readOnly = true)
+    public PageSlice<Workspace> list(String email, int limit, UUID after) {
+        PageSlice.validateLimit(limit);
+        return PageSlice.from(workspaces.findByMember(userId(email), limit + 1, after), limit, Workspace::id);
     }
 
     private UUID userId(String email) {

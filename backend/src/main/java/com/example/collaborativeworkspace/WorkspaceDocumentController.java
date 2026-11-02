@@ -24,8 +24,9 @@ public class WorkspaceDocumentController {
     public WorkspaceDocumentController(DocumentService service) { this.service = service; }
 
     @PostMapping
-    public ResponseEntity<Document> create(@PathVariable UUID workspaceId, @Valid @RequestBody CreateDocumentRequest request, Authentication authentication) {
-        Document document = service.create(workspaceId, authentication.getName(), request.title());
+    public ResponseEntity<Document> create(@PathVariable UUID workspaceId, @Valid @RequestBody CreateDocumentRequest request, Authentication authentication,
+            @org.springframework.web.bind.annotation.RequestHeader(name = "Idempotency-Key", required = false) String requestKey) {
+        Document document = service.create(workspaceId, authentication.getName(), request.title(), requestKey);
         return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).body(document);
     }
 

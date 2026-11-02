@@ -19,10 +19,7 @@ class ClosedByDefaultIntegrationTest {
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
-        String url = System.getenv("WORKSPACE_TEST_DB_URL");
-        if (url == null || url.isBlank() || url.equals(System.getenv("WORKSPACE_DB_URL"))) {
-            throw new IllegalStateException("A separate test database URL is required");
-        }
+        String url = TestDatabaseGuard.verifiedUrl();
         registry.add("spring.datasource.url", () -> url);
         registry.add("spring.datasource.username", () -> System.getenv("WORKSPACE_TEST_DB_USER"));
         registry.add("spring.datasource.password", () -> System.getenv("WORKSPACE_TEST_DB_PASSWORD"));

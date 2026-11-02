@@ -1,0 +1,66 @@
+package com.example.collaborativeworkspace;
+
+import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class WorkspaceMembershipService {
+    private final WorkspaceRepository workspaces;
+    private final UserRepository users;
+
+    public WorkspaceMembershipService(WorkspaceRepository workspaces, UserRepository users) {
+        this.workspaces = workspaces;
+        this.users = users;
+    }
+
+    @Transactional(readOnly = true)
+    public List<WorkspaceMember> list(UUID workspaceId, String actorEmail) {
+        UUID actor = actorId(actorEmail);
+        List<WorkspaceMember> members = workspaces.listMembers(workspaceId, actor);
+        if (members.isEmpty()) throw new WorkspaceResourceNotFoundException();
+        return members;
+    }
+
+    // Every membership writer must lock the workspace first and recheck permissions afterwards.
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public WorkspaceMember setRole(UUID workspaceId, String actorEmail, ChangeWorkspaceMemberRequest request) {
+        UUID actor = actorId(actorEmail);
+        lockAndRequireOwner(workspaceId, actor);
+        String email = request.email().toLowerCase(Locale.ROOT);
+        UUID target = users.findIdByEmail(email).orElseThrow(WorkspaceResourceNotFoundException::new);
+        var oldRole = workspaces.memberRole(workspaceId, target);
+        protectLastOwner(workspaceId, oldRole.orElse(null), request.role());
+        workspaces.upsertMember(workspaceId, target, request.role());
+        return new WorkspaceMember(target, email, request.role());
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void remove(UUID workspaceId, String actorEmail, UUID target) {
+        UUID actor = actorId(actorEmail);
+        lockAndRequireOwner(workspaceId, actor);
+        WorkspaceRole oldRole = workspaces.memberRole(workspaceId, target).orElseThrow(WorkspaceResourceNotFoundException::new);
+        protectLastOwner(workspaceId, oldRole, null);
+        workspaces.removeMember(workspaceId, target);
+    }
+
+    private UUID actorId(String email) {
+        return users.findIdByEmail(email).orElseThrow(() -> new AccessDeniedException("User is not available"));
+    }
+
+    private void lockAndRequireOwner(UUID workspaceId, UUID actor) {
+        if (!workspaces.lockWorkspace(workspaceId)) throw new WorkspaceResourceNotFoundException();
+        WorkspaceRole role = workspaces.memberRole(workspaceId, actor).orElseThrow(WorkspaceResourceNotFoundException::new);
+        if (role != WorkspaceRole.OWNER) throw new AccessDeniedException("Owner permission required");
+    }
+
+    private void protectLastOwner(UUID workspaceId, WorkspaceRole oldRole, WorkspaceRole newRole) {
+        if (oldRole == WorkspaceRole.OWNER && newRole != WorkspaceRole.OWNER && workspaces.countOwners(workspaceId) <= 1) {
+            throw new LastWorkspaceOwnerException();
+        }
+    }
+}

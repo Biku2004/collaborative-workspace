@@ -1,6 +1,6 @@
-# API endpoint reference through Lesson 11
+# API endpoint reference through Lesson 16
 
-This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in, but document access is not isolated by workspace or owner.
+This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 
 | Method | Path | Purpose | Access in `dev` | Request and success response |
 |---|---|---|---|---|
@@ -9,12 +9,21 @@ This table describes the currently implemented routes, not the planned collabora
 | GET | `/login` | Display Spring Security's login form | Public, `dev` only | HTML login form with a CSRF token. |
 | POST | `/login` | Authenticate a stored user or temporary `learner` bootstrap account | Public, `dev` only; CSRF required | Form fields `username`, `password`, and CSRF token. Success normally returns a redirect and session cookie; failure redirects to a login error. |
 | GET | `/api/me` | Show the current session identity | Authenticated session, `dev` only | Returns 200 with `username`; identity comes from the authenticated session. |
+| POST | `/api/workspaces` | Create a workspace and its owner membership | Stored-user session and CSRF token, `dev` only | JSON `{ "name": "Product team" }`; returns 201 with workspace fields and `role: OWNER`. |
+| GET | `/api/workspaces` | List the current user's workspace memberships | Stored-user session, `dev` only | Returns 200 and an array scoped to the signed-in user; there is no pagination yet. |
+| GET | `/api/workspaces/{workspaceId}/members` | List a workspace's members | Current workspace member | Returns 200 and member IDs, emails and roles; nonmembers receive 404. |
+| POST | `/api/workspaces/{workspaceId}/members` | Add an existing user or change their role | Workspace owner and CSRF token | JSON with `email` and `role` (`OWNER`, `EDITOR`, `VIEWER`); returns 200, or 409 if the change would remove the last owner. |
+| DELETE | `/api/workspaces/{workspaceId}/members/{userId}` | Remove a member | Workspace owner and CSRF token | Returns 204; 409 protects the last owner, 404 indicates an inaccessible or missing resource. |
 | GET | `/logout` | Display the logout confirmation form | `dev` profile | Returns a confirmation page; does not itself log the user out. |
 | POST | `/logout` | Invalidate the current session | Session and CSRF token | Spring Security invalidates the server-side session, clears the session cookie and redirects to `/login?logout`. |
-| POST | `/api/documents` | Create a document | Authenticated session and CSRF token | JSON `{ "title": "Meeting notes" }`. Returns 201, a document body and a `Location` header. A title must be nonblank, at most 200 UTF-16 code units, and contain no NUL character. |
-| GET | `/api/documents/{id}` | Retrieve a document | Authenticated session | UUID path parameter. Returns 200 with `id`, `title`, `createdAt`; invalid UUID gives 400 and a missing document gives 404. |
+| POST | `/api/workspaces/{workspaceId}/documents` | Create a document inside a workspace | Workspace owner or editor, with session and CSRF token | JSON `{ "title": "Meeting notes" }`. Returns 201 and a document body including `workspaceId`. Viewer gets 403; nonmember gets 404. |
+| PATCH | `/api/workspaces/{workspaceId}/documents/{documentId}` | Rename an active document | Owner or editor, with CSRF | JSON `{ "title": "New title", "version": 0 }`; returns 200 with incremented version, 409 for a stale version or archived document. |
+| POST | `/api/workspaces/{workspaceId}/documents/{documentId}/archive` | Archive an active document | Owner or editor, with CSRF | JSON `{ "version": 0 }`; returns 200 with `archived: true` and incremented version, or 409 for a stale version or already archived document. |
+| POST | `/api/documents` | Former unscoped creation route | Removed | Returns 404 for an authenticated request with valid CSRF. |
+| GET | `/api/documents/{id}` | Read one document | Any current workspace member | Returns 200 with document metadata, including archived documents; missing, unassigned, and inaccessible documents return 404. |
+| GET | `/api/workspaces/{workspaceId}/documents` | List documents in a workspace | Any current workspace member | Returns 200 with active `items` and `nextCursor`; accepts `limit` (1–100, default 20) and optional `cursor`. Inaccessible workspace gives 404, invalid page parameters give 400. |
 | POST | `/api/dev/users` | Provision a stored user for the learning project | `dev` only; authenticated `learner` bootstrap session and CSRF token | JSON with `email` and `password`. Returns 201 with `id`, normalized `email`, `createdAt`; duplicate email gives 409 and invalid input gives 400. The response never includes the password or hash. |
 
 In the default non-`dev` profile, `GET /api/status` is allowed and protected routes are denied. The local dev profile binds to `127.0.0.1` by default. Exact security responses depend on which filter rejects a request: an anonymous protected API GET returns 401, while a POST without a CSRF token can return 403 before authentication is checked.
 
-For commands, cookies, login, logout and CSRF examples, see [Lesson 8](lessons/08-spring-security.md), [Lesson 10](lessons/10-login-with-a-session.md), and [Lesson 11](lessons/11-logout-and-session-lifetime.md). No endpoint latency measurements or service-level performance claims have been made.
+For commands, cookies, login, logout and workspace examples, see [Lesson 8](lessons/08-spring-security.md), [Lesson 10](lessons/10-login-with-a-session.md), [Lesson 11](lessons/11-logout-and-session-lifetime.md), [Lesson 12](lessons/12-create-workspaces.md), [Lesson 13](lessons/13-membership-and-roles.md), [Lesson 14](lessons/14-workspace-document-creation.md), [Lesson 15](lessons/15-read-and-list-authorized-documents.md), and [Lesson 16](lessons/16-rename-and-archive-documents.md). No endpoint latency measurements or service-level performance claims have been made.

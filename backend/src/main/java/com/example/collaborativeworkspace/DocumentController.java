@@ -1,23 +1,21 @@
 package com.example.collaborativeworkspace;
 
-import jakarta.validation.Valid;
-import java.net.URI;
 import java.util.UUID;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
+@Profile("dev")
 @RequestMapping("/api/documents")
 public class DocumentController {
     private final DocumentService service;
     public DocumentController(DocumentService service) { this.service = service; }
 
-    @PostMapping
-    public ResponseEntity<Document> create(@Valid @RequestBody CreateDocumentRequest request) {
-        Document document = service.create(request.title());
-        return ResponseEntity.created(URI.create("/api/documents/" + document.id())).body(document);
-    }
-
     @GetMapping("/{id}")
-    public Document get(@PathVariable UUID id) { return service.find(id); }
+    public ResponseEntity<Document> get(@PathVariable UUID id, Authentication authentication) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.get(id, authentication.getName()));
+    }
 }

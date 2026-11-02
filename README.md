@@ -1,6 +1,6 @@
 # Collaborative Workspace — learning and implementation plan
 
-Prepared 29 October 2026. Status: Lessons 1–11 are implemented and verified locally. Stored users can log in and out through the local development profile; workspace permissions and collaboration are later milestones.
+Prepared 29 October 2026. Status: Lessons 1–16 are implemented and verified locally. Stored users can log in, manage workspace membership, and create, read, list, rename and archive authorized workspace documents; real-time collaboration is a later milestone.
 
 We will assume no prior experience with Spring and explain Java concepts whenever they are needed. We will implement one feature per lesson and verify it before moving on. The goal is a project you can build, debug, and defend in an interview.
 
@@ -16,7 +16,12 @@ The supplied attachment is the project brief. We will provide the beginner-frien
 | [Lesson 9: Users and password hashes](docs/lessons/09-users-and-passwords.md) | Development-only user provisioning, password hashing, validation and database uniqueness |
 | [Lesson 10: Login and sessions](docs/lessons/10-login-with-a-session.md) | Database-backed development login, session identity and fixation protection |
 | [Lesson 11: Logout and session lifetime](docs/lessons/11-logout-and-session-lifetime.md) | Logout, CSRF, session invalidation, idle timeout and tests |
-| [Current API endpoints](docs/08-api-endpoints.md) | Methods, routes, access requirements and expected responses through Lesson 11 |
+| [Lesson 12: Create workspaces](docs/lessons/12-create-workspaces.md) | Atomic workspace creation, owner membership and user-scoped lists |
+| [Lesson 13: Membership and roles](docs/lessons/13-membership-and-roles.md) | Owner-managed membership, role checks and last-owner protection |
+| [Lesson 14: Workspace document creation](docs/lessons/14-workspace-document-creation.md) | Role-checked writes and preservation of pre-workspace documents |
+| [Lesson 15: Authorized document reads](docs/lessons/15-read-and-list-authorized-documents.md) | Membership-aware reads and cursor pagination |
+| [Lesson 16: Rename and archive documents](docs/lessons/16-rename-and-archive-documents.md) | Version checks, archive visibility and conflicting updates |
+| [Current API endpoints](docs/08-api-endpoints.md) | Methods, routes, access requirements and expected responses through Lesson 16 |
 | [1. Architecture and foundations](docs/01-architecture.md) | Expanded product idea, concepts, recommended architecture, alternatives, and corrections to the brief |
 | [2. Data, protocol, and algorithms](docs/02-data-and-protocol.md) | Tables, permissions, API contracts, edit/reconnect/restore flows, and transaction boundaries |
 | [3. Feature-by-feature implementation](docs/03-implementation-roadmap.md) | Ordered lessons, Spring topics, files to build, acceptance tests, and stopping points |

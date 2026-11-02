@@ -21,8 +21,15 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 - [x] **Lesson 9 — Store users and hash passwords.** See [Lesson 9](lessons/09-users-and-passwords.md). Controlled development provisioning is verified; login with stored users is Lesson 10.
 - [x] **Lesson 10 — Log in with a session.** See [Lesson 10](lessons/10-login-with-a-session.md). Stored user sessions are tested in the local development profile; workspace authorization remains a later lesson.
 - [x] **Lesson 11 — Logout and session lifetime.** See [Lesson 11](lessons/11-logout-and-session-lifetime.md). Logout, CSRF, idle expiry and session isolation are tested.
+- [x] **Lesson 12 — Create workspaces.** See [Lesson 12](lessons/12-create-workspaces.md). Atomic workspace/owner creation and membership-scoped lists are tested; document isolation remains future work.
+- [x] **Lesson 13 — Membership and role rules.** See [Lesson 13](lessons/13-membership-and-roles.md). Role checks, member visibility and concurrent last-owner protection are tested.
+- [x] **Lesson 14 — Workspace-scoped document creation.** See [Lesson 14](lessons/14-workspace-document-creation.md). Owner/editor creation and safe preservation of legacy documents are verified; authorized reads are introduced in Lesson 15.
 
-- [ ] Add authentication and sessions, one feature at a time.
+- [x] **Lesson 15 — Read and list authorized documents.** See [Lesson 15](lessons/15-read-and-list-authorized-documents.md). Members can read workspace documents using keyset pagination; unassigned legacy documents remain inaccessible.
+
+- [x] **Lesson 16 — Rename and archive documents.** See [Lesson 16](lessons/16-rename-and-archive-documents.md). Owner/editor mutations use metadata versions and archived documents are omitted from ordinary lists.
+
+- [ ] Expand authentication and sessions in later lessons.
 - [ ] Add workspaces and member roles; test that users cannot access another workspace.
 - [ ] Associate documents with workspaces and enforce permissions.
 - [ ] Learn Yjs with a small plain-text collaboration experiment.

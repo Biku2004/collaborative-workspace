@@ -29,4 +29,9 @@ public class UserRepository {
                         .password(rs.getString("password_hash")).roles("USER").build(), email)
                 .stream().findFirst();
     }
+
+    public Optional<UUID> findIdByEmail(String email) {
+        return jdbc.query("SELECT id FROM app_users WHERE email = ?",
+                (rs, row) -> rs.getObject("id", UUID.class), email).stream().findFirst();
+    }
 }

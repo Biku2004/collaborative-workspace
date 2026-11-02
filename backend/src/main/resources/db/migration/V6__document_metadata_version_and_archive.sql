@@ -1,0 +1,2 @@
+ALTER TABLE documents ADD COLUMN version BIGINT NOT NULL DEFAULT 0 CHECK (version >= 0);
+ALTER TABLE documents ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false;

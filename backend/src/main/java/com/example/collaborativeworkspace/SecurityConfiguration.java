@@ -46,6 +46,7 @@ public class SecurityConfiguration {
         return http.authorizeHttpRequests(auth -> auth
                     .requestMatchers(HttpMethod.GET, "/api/status", "/api/csrf").permitAll()
                     .requestMatchers("/api/dev/users", "/api/dev/users/**").hasRole("BOOTSTRAP")
+                    .requestMatchers("/api/workspaces", "/api/workspaces/**").hasRole("USER")
                     .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
                     .anyRequest().authenticated())
                 .formLogin(Customizer.withDefaults())

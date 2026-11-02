@@ -1,5 +1,7 @@
 # Lesson 8: Protect the document API with Spring Security
 
+> This is a historical lesson. [Lesson 14](14-workspace-document-creation.md) replaces unscoped document creation; [Lesson 15](15-read-and-list-authorized-documents.md) adds membership-authorized reads. Use the latest lessons for current API instructions.
+
 ## What we are building
 
 Before this lesson, anyone who could reach the local server could create or read documents. We now require a login for the document API in a **local development profile**. A temporary account lets us learn the security flow before database-backed users arrive in Lesson 9.

@@ -49,7 +49,6 @@ class DocumentHttpIntegrationTest {
     void createsRetrievesAndValidatesDocuments() throws Exception {
         HttpClient client = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
         String base = "http://127.0.0.1:" + port;
-        UUID createdId = null;
         String userEmail = "lesson-" + UUID.randomUUID() + "@example.com";
         String otherEmail = "other-" + UUID.randomUUID() + "@example.com";
         try {
@@ -135,20 +134,10 @@ class DocumentHttpIntegrationTest {
             assertEquals(400, post(client, base + "/api/dev/users", "{\"email\":\"invalid\",\"password\":\"a-long-enough-password\"}", csrf).statusCode());
             assertEquals(400, post(client, base + "/api/dev/users", "{\"email\":\"valid@example.com\",\"password\":\"short\"}", csrf).statusCode());
             assertEquals(400, post(client, base + "/api/dev/users", "{\"email\":\"valid@example.com\",\"password\":\"" + "é".repeat(40) + "\"}", csrf).statusCode());
-            var created = post(client, base + "/api/documents", "{\"title\":\"  Test document  \"}", csrf);
-            assertEquals(201, created.statusCode());
-            String location = created.headers().firstValue("Location").orElseThrow();
-            createdId = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
-            var fetched = send(client, "GET", base + location, null);
-            assertEquals(200, fetched.statusCode());
-            assertTrue(fetched.body().contains("Test document"));
-            assertEquals(400, post(client, base + "/api/documents", "{\"title\":\" \"}", csrf).statusCode());
-            assertEquals(400, post(client, base + "/api/documents", "{\"title\":\"abc\\u0000def\"}", csrf).statusCode());
-            assertEquals(400, post(client, base + "/api/documents", "{", csrf).statusCode());
+            assertEquals(404, post(client, base + "/api/documents", "{\"title\":\"Legacy write\"}", csrf).statusCode());
             assertEquals(400, send(client, "GET", base + "/api/documents/not-a-uuid", null).statusCode());
             assertEquals(404, send(client, "GET", base + "/api/documents/00000000-0000-0000-0000-000000000000", null).statusCode());
         } finally {
-            if (createdId != null) jdbc.update("DELETE FROM documents WHERE id = ?", createdId);
             jdbc.update("DELETE FROM app_users WHERE email = ?", userEmail);
             jdbc.update("DELETE FROM app_users WHERE email = ?", otherEmail);
         }

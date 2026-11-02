@@ -1,0 +1,89 @@
+package com.example.collaborativeworkspace;
+
+import static org.junit.jupiter.api.Assertions.*;
+import java.sql.DriverManager;
+import java.util.UUID;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+
+@EnabledIfEnvironmentVariable(named = "WORKSPACE_RUN_DB_TESTS", matches = "true")
+class LegacyDocumentMigrationTest {
+    @Test
+    void v4PreservesPreexistingDocumentsAndRejectsNewUnscopedRows() throws Exception {
+        String url = required("WORKSPACE_TEST_DB_URL"), user = required("WORKSPACE_TEST_DB_USER"), password = required("WORKSPACE_TEST_DB_PASSWORD");
+        if (url.equals(System.getenv("WORKSPACE_DB_URL"))) throw new IllegalStateException("A separate test database is required");
+        String schema = "lesson14_" + UUID.randomUUID().toString().replace("-", "");
+        UUID legacyId = UUID.randomUUID();
+        try {
+            Flyway.configure().dataSource(url, user, password).schemas(schema).defaultSchema(schema).target("3").load().migrate();
+            try (var connection = DriverManager.getConnection(url, user, password);
+                 var insert = connection.prepareStatement("INSERT INTO " + schema + ".documents (id, title) VALUES (?, ?)")) {
+                insert.setObject(1, legacyId); insert.setString(2, "legacy before migration"); insert.executeUpdate();
+            }
+            Flyway.configure().dataSource(url, user, password).schemas(schema).defaultSchema(schema).load().migrate();
+            try (var connection = DriverManager.getConnection(url, user, password);
+                 var query = connection.prepareStatement("SELECT title, workspace_id FROM " + schema + ".documents WHERE id = ?")) {
+                query.setObject(1, legacyId);
+                try (var rs = query.executeQuery()) {
+                    assertTrue(rs.next()); assertEquals("legacy before migration", rs.getString("title")); assertNull(rs.getObject("workspace_id"));
+                }
+                try (var insert = connection.prepareStatement("INSERT INTO " + schema + ".documents (id, title) VALUES (?, ?)")) {
+                    insert.setObject(1, UUID.randomUUID()); insert.setString(2, "unscoped");
+                    assertThrows(java.sql.SQLException.class, insert::executeUpdate);
+                }
+                connection.setSchema(schema);
+                var jdbc = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
+                UUID actor = UUID.randomUUID(), workspace = UUID.randomUUID();
+                jdbc.update("INSERT INTO app_users (id, email, password_hash) VALUES (?, ?, ?)", actor, "legacy-test@example.com", "test-hash");
+                jdbc.update("INSERT INTO workspaces (id, name, created_by) VALUES (?, ?, ?)", workspace, "test", actor);
+                jdbc.update("INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, 'OWNER')", workspace, actor);
+                assertTrue(new DocumentRepository(jdbc).findVisible(legacyId, actor).isEmpty());
+            }
+        } finally {
+            try (var connection = DriverManager.getConnection(url, user, password); var statement = connection.createStatement()) {
+                statement.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+            }
+        }
+    }
+
+    @Test
+    void v6PreservesExistingScopedDocumentMetadata() throws Exception {
+        String url = required("WORKSPACE_TEST_DB_URL"), user = required("WORKSPACE_TEST_DB_USER"), password = required("WORKSPACE_TEST_DB_PASSWORD");
+        if (url.equals(System.getenv("WORKSPACE_DB_URL"))) throw new IllegalStateException("A separate test database is required");
+        String schema = "lesson16_" + UUID.randomUUID().toString().replace("-", "");
+        UUID actor = UUID.randomUUID(), workspace = UUID.randomUUID(), document = UUID.randomUUID();
+        try {
+            Flyway.configure().dataSource(url, user, password).schemas(schema).defaultSchema(schema).target("5").load().migrate();
+            try (var connection = DriverManager.getConnection(url, user, password)) {
+                connection.setSchema(schema);
+                var jdbc = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
+                jdbc.update("INSERT INTO app_users (id, email, password_hash) VALUES (?, ?, ?)", actor, "v6-test@example.com", "test-hash");
+                jdbc.update("INSERT INTO workspaces (id, name, created_by) VALUES (?, ?, ?)", workspace, "test", actor);
+                jdbc.update("INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, 'OWNER')", workspace, actor);
+                jdbc.update("INSERT INTO documents (id, workspace_id, title) VALUES (?, ?, ?)", document, workspace, "Existing title");
+            }
+            Flyway.configure().dataSource(url, user, password).schemas(schema).defaultSchema(schema).load().migrate();
+            try (var connection = DriverManager.getConnection(url, user, password)) {
+                connection.setSchema(schema);
+                var jdbc = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
+                Document existing = new DocumentRepository(jdbc).findVisible(document, actor).orElseThrow();
+                assertEquals("Existing title", existing.title());
+                assertEquals(workspace, existing.workspaceId());
+                assertEquals(0, existing.version());
+                assertFalse(existing.archived());
+            }
+        } finally {
+            try (var connection = DriverManager.getConnection(url, user, password); var statement = connection.createStatement()) {
+                statement.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+            }
+        }
+    }
+    private static String required(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) throw new IllegalStateException(name + " is required");
+        return value;
+    }
+}

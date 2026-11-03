@@ -68,3 +68,22 @@ test('stored-user login, isolated lists, pagination, revocation and logout', asy
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+test('an unknown document format is not opened as plain text', async ({ page }) => {
+  await page.route('**/api/workspaces/*/documents*', async route => {
+    const response = await route.fetch();
+    const body = await response.json() as { items: { collaborationFormat: string }[] };
+    if (body.items.length) body.items[0]!.collaborationFormat = 'FUTURE_RICH_TEXT';
+    await route.fulfill({ response, json: body });
+  });
+  await page.goto('/');
+  await page.getByLabel('Email').fill(required('WORKSPACE_E2E_ALICE'));
+  await page.getByLabel('Password').fill('browser-test-password');
+  await page.getByRole('button', { name: /Continue/ }).click();
+  await page.getByRole('button', { name: new RegExp(required('WORKSPACE_E2E_ALICE_NAME')) }).click();
+  const first = page.locator('.document-list li button').first();
+  await expect(first).toBeVisible();
+  await first.click();
+  await expect(page.getByRole('alert')).toContainText('format is not supported');
+  await expect(page.getByLabel('Document text')).toHaveCount(0);
+});

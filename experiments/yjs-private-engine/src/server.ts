@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { Worker } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
-import { InputError, LIMITS, parseRequest } from './protocol.js';
+import { InputError, LIMITS, parseRequest, parseRichRequest } from './protocol.js';
+import contract from '@workspace/rich-text-schema-v1/contract.json' with { type: 'json' };
 
 function respond(res: ServerResponse, status: number, body: unknown): void {
   if (res.destroyed || res.writableEnded) return;
@@ -14,7 +15,8 @@ function respond(res: ServerResponse, status: number, body: unknown): void {
 export function createEngineServer(deadlineMs: number = LIMITS.deadlineMs, workerUrl = new URL('./worker.js', import.meta.url)) {
   let active = 0;
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    if (req.method !== 'POST' || req.url !== '/v1/reconstruct') { respond(res, 404, { code: 'NOT_FOUND' }); return; }
+    if (req.method !== 'POST' || (req.url !== '/v1/reconstruct' && req.url !== '/v2/reconstruct')) { respond(res, 404, { code: 'NOT_FOUND' }); return; }
+    const rich = req.url === '/v2/reconstruct';
     if (active >= LIMITS.activeWorkers) { req.resume(); respond(res, 503, { code: 'BUSY' }); return; }
     active++;
     let worker: Worker | undefined;
@@ -40,9 +42,12 @@ export function createEngineServer(deadlineMs: number = LIMITS.deadlineMs, worke
     req.on('end', () => {
       if (finished) return;
       let updates: Uint8Array[];
-      try { updates = parseRequest(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      try {
+        const request: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        updates = rich ? parseRichRequest(request) : parseRequest(request);
+      }
       catch (error) { finish(400, { code: error instanceof InputError ? error.code : 'INVALID_REQUEST' }); return; }
-      try { worker = new Worker(workerUrl, { workerData: updates, resourceLimits: { maxOldGenerationSizeMb: 64, maxYoungGenerationSizeMb: 16, stackSizeMb: 4 } }); }
+      try { worker = new Worker(workerUrl, { workerData: rich ? { format: contract.format, updates } : updates, resourceLimits: { maxOldGenerationSizeMb: 64, maxYoungGenerationSizeMb: 16, stackSizeMb: 4 } }); }
       catch { finish(500, { code: 'ENGINE_FAILURE' }); return; }
       worker.once('message', (message: { ok: boolean; result?: unknown; code?: string }) => {
         if (message.ok) finish(200, message.result);

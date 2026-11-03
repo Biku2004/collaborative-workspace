@@ -518,6 +518,9 @@ class WorkspaceIntegrationTest {
             assertThrows(IdempotencyConflictException.class, () -> service.create(email, "Different", "same-request"));
             membership.setRole(workspace, email, new ChangeWorkspaceMemberRequest(editor, WorkspaceRole.EDITOR));
             Document original = documentService.create(workspace, editor, "Notes", "doc-retry");
+            assertEquals("PLAIN_TEXT_V1", original.collaborationFormat());
+            // A response persisted by an older application has no format property.
+            jdbc.update("UPDATE creation_requests SET response_json=(response_json::jsonb - 'collaborationFormat')::text WHERE user_id=? AND request_key=?", editorId, "doc-retry");
             Document replay = documentService.create(workspace, editor, "Notes", "doc-retry");
             assertEquals(original, replay); // Simulates retry after the original response was lost.
             var retryOne = java.util.concurrent.CompletableFuture.supplyAsync(() -> documentService.create(workspace, editor, "Concurrent", "concurrent-doc"));

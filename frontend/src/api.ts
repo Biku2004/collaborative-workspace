@@ -1,5 +1,5 @@
 export type Workspace = { id: string; name: string; role: 'OWNER' | 'EDITOR' | 'VIEWER'; createdAt: string };
-export type Document = { id: string; workspaceId: string; title: string; createdAt: string; version: number; archived: boolean };
+export type Document = { id: string; workspaceId: string; title: string; createdAt: string; version: number; archived: boolean; collaborationFormat: string };
 export type Page<T> = { items: T[]; nextCursor: string | null };
 type Csrf = { headerName: string; token: string };
 export type CurrentUser = { username: string; id?: string };

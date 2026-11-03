@@ -1,0 +1,7 @@
+{
+  "name": "@workspace/rich-text-schema-v1",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { "./contract.json": "./contract.json" }
+}

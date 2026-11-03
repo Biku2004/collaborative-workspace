@@ -15,6 +15,9 @@ export function readOfflineContext(): OfflineContext | undefined {
         typeof context.workspace.name !== 'string' || !['OWNER', 'EDITOR', 'VIEWER'].includes(context.workspace.role) ||
         !context.document || typeof context.document.id !== 'string' || !UUID.test(context.document.id) ||
         context.document.workspaceId !== context.workspace.id || typeof context.document.title !== 'string') return undefined;
+    // Metadata written before format labels existed can only refer to the old plain-text format.
+    if (context.document.collaborationFormat === undefined) context.document.collaborationFormat = 'PLAIN_TEXT_V1';
+    if (context.document.collaborationFormat !== 'PLAIN_TEXT_V1') return undefined;
     return context;
   } catch { return undefined; }
 }

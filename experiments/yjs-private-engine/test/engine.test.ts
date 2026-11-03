@@ -28,6 +28,42 @@ test('shared Java transport fixture reconstructs to the expected Yjs text', asyn
     assert.equal(result.body.text, 'Hello Java');
   });
 });
+
+test('private version 2 validates a bounded rich-text candidate and rejects unsupported input', async () => {
+  const doc = new Y.Doc();
+  try {
+    const paragraph = new Y.XmlElement('paragraph'), text = new Y.XmlText();
+    doc.getXmlFragment('body').insert(0, [paragraph]); paragraph.insert(0, [text]);
+    text.insert(0, 'Hello'); text.format(0, 5, { bold: {} });
+    const encoded = b64(Y.encodeStateAsUpdate(doc));
+    await withServer(async legacyUrl => {
+      const url = legacyUrl.replace('/v1/', '/v2/');
+      const valid = await post(url, { version: 2, format: 'RICH_TEXT_V1', updates: [encoded] });
+      assert.equal(valid.status, 200);
+      assert.equal(valid.body.version, 2);
+      assert.equal(valid.body.format, 'RICH_TEXT_V1');
+      assert.equal(valid.body.initialized, true);
+      assert.deepEqual(valid.body.document, { type: 'doc', content: [{ type: 'paragraph', content: [
+        { type: 'text', marks: [{ type: 'bold' }], text: 'Hello' },
+      ] }] });
+      const checkpoint = valid.body.checkpoint;
+      assert.equal(typeof checkpoint, 'string');
+      assert.equal((await post(url, { version: 2, format: 'RICH_TEXT_V1', updates: [checkpoint] })).status, 200);
+      assert.equal((await post(url, { version: 2, format: 'UNKNOWN', updates: [encoded] })).status, 400);
+      assert.equal((await post(url, { version: 1, updates: [encoded] })).status, 400);
+      const plain = new Y.Doc(); plain.getText('content').insert(0, 'plain');
+      const wrongRoot = await post(url, { version: 2, format: 'RICH_TEXT_V1', updates: [b64(Y.encodeStateAsUpdate(plain))] });
+      plain.destroy();
+      assert.equal(wrongRoot.status, 422);
+      assert.equal(wrongRoot.body.code, 'UNSUPPORTED_DOCUMENT');
+      paragraph.setAttribute('onclick', 'alert(1)');
+      const invalid = await post(url, { version: 2, format: 'RICH_TEXT_V1', updates: [b64(Y.encodeStateAsUpdate(doc))] });
+      assert.equal(invalid.status, 422);
+      assert.equal(invalid.body.code, 'UNSUPPORTED_DOCUMENT');
+      assert.equal(invalid.body.checkpoint, undefined);
+    });
+  } finally { doc.destroy(); }
+});
 async function post(url: string, value: unknown) {
   const response = await fetch(url, { method: 'POST', body: JSON.stringify(value), headers: { 'Content-Type': 'application/json' } });
   return { status: response.status, body: await response.json() as Record<string, unknown> };
@@ -94,6 +130,13 @@ test('malformed, oversized, unsupported and invalid requests are rejected', asyn
     doc.destroy();
     assert.equal(unsupported.status, 422);
     assert.equal(unsupported.body.code, 'UNSUPPORTED_DOCUMENT');
+    const rich = new Y.Doc();
+    const paragraph = new Y.XmlElement('paragraph'), xmlText = new Y.XmlText();
+    rich.getXmlFragment('body').insert(0, [paragraph]); paragraph.insert(0, [xmlText]); xmlText.insert(0, 'rich');
+    const legacyProtocol = await post(url, { version: 1, updates: [b64(Y.encodeStateAsUpdate(rich))] });
+    rich.destroy();
+    assert.equal(legacyProtocol.status, 422);
+    assert.equal(legacyProtocol.body.code, 'UNSUPPORTED_DOCUMENT');
     const valid = Buffer.from(fixtures()[0]!, 'base64');
     const trailing = await post(url, { version: 1, updates: [b64(Buffer.concat([valid, Buffer.from([255])]))] });
     assert.equal(trailing.status, 422);

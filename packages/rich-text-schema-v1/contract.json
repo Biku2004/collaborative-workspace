@@ -1,0 +1,17 @@
+{
+  "format": "RICH_TEXT_V1",
+  "root": "body",
+  "starterKit": {
+    "blockquote": false,
+    "code": false,
+    "codeBlock": false,
+    "hardBreak": false,
+    "horizontalRule": false,
+    "link": false,
+    "strike": false,
+    "underline": false,
+    "undoRedo": false,
+    "trailingNode": false,
+    "heading": { "levels": [1, 2, 3] }
+  }
+}

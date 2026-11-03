@@ -32,3 +32,25 @@ test('local document writes are ordered, scoped, and protected from a second wri
   expect(result).toEqual({ competingBlocked: true, otherEmpty: true, captured: [1], state: [2],
     pending: [{ id: '40000000-0000-4000-8000-000000000001', payload: 'Ag==' }] });
 });
+
+test('legacy local metadata defaults to plain text and unknown formats are rejected', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    const path = '/src/offlineContext.ts';
+    const { readOfflineContext } = await import(/* @vite-ignore */ path) as typeof import('../src/offlineContext');
+    const key = 'workspace-last-offline-document-v1';
+    const workspaceId = '20000000-0000-4000-8000-000000000001';
+    const context = {
+      user: { id: '10000000-0000-4000-8000-000000000001', username: 'user@example.com' },
+      workspace: { id: workspaceId, name: 'Team', role: 'EDITOR', createdAt: '2026-01-01T00:00:00Z' },
+      document: { id: '30000000-0000-4000-8000-000000000001', workspaceId, title: 'Notes', createdAt: '2026-01-01T00:00:00Z', version: 0, archived: false },
+    };
+    localStorage.setItem(key, JSON.stringify(context));
+    const legacy = readOfflineContext()?.document.collaborationFormat;
+    localStorage.setItem(key, JSON.stringify({ ...context, document: { ...context.document, collaborationFormat: 'FUTURE_SCHEMA' } }));
+    const unknown = readOfflineContext();
+    localStorage.removeItem(key);
+    return { legacy, rejected: unknown === undefined };
+  });
+  expect(result).toEqual({ legacy: 'PLAIN_TEXT_V1', rejected: true });
+});

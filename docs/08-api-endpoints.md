@@ -42,3 +42,5 @@ The versioned update/acknowledgement contract is described in [Lesson 21](lesson
 The committed relay and replay contract is described in [Lesson 22](lessons/22-broadcast-and-repair.md).
 
 The local browser login and list flow is described in [Lesson 23](lessons/23-minimal-browser-application.md).
+
+Lesson 27 is in progress: document metadata now includes `collaborationFormat`, currently always `PLAIN_TEXT_V1`. The migration labels existing documents without converting their history. Rich-text formats are not yet accepted.

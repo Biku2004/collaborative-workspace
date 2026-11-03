@@ -79,6 +79,46 @@ class LegacyDocumentMigrationTest {
             }
         }
     }
+
+    @Test
+    void v10LabelsExistingDocumentsWithoutRewritingTheirStream() throws Exception {
+        String url = TestDatabaseGuard.verifiedUrl(), user = required("WORKSPACE_TEST_DB_USER"), password = required("WORKSPACE_TEST_DB_PASSWORD");
+        String schema = "lesson27_" + UUID.randomUUID().toString().replace("-", "");
+        UUID actor = UUID.randomUUID(), workspace = UUID.randomUUID(), document = UUID.randomUUID();
+        byte[] checkpoint = {0, 0}, update = {1, 2, 3};
+        try {
+            Flyway.configure().dataSource(url, user, password).schemas(schema).defaultSchema(schema).target("9").load().migrate();
+            try (var connection = DriverManager.getConnection(url, user, password)) {
+                connection.setSchema(schema);
+                var jdbc = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
+                jdbc.update("INSERT INTO app_users (id, email, password_hash) VALUES (?, ?, ?)", actor, "v10-test@example.com", "test-hash");
+                jdbc.update("INSERT INTO workspaces (id, name, created_by) VALUES (?, ?, ?)", workspace, "test", actor);
+                jdbc.update("INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, 'OWNER')", workspace, actor);
+                jdbc.update("INSERT INTO documents (id, workspace_id, title) VALUES (?, ?, ?)", document, workspace, "Existing content");
+                jdbc.update("INSERT INTO document_streams(document_id, epoch, head_sequence, checkpoint) VALUES (?, ?, ?, ?)", document, 0, 1, checkpoint);
+                jdbc.update("INSERT INTO document_updates(document_id, epoch, sequence, update_id, actor_id, payload, payload_sha256) VALUES (?, 0, 1, ?, ?, ?, ?)",
+                        document, UUID.randomUUID(), actor, update, new byte[32]);
+                jdbc.update("INSERT INTO document_update_outbox(event_id, document_id, epoch, sequence) VALUES (?, ?, 0, 1)", UUID.randomUUID(), document);
+            }
+            Flyway.configure().dataSource(url, user, password).schemas(schema).defaultSchema(schema).load().migrate();
+            try (var connection = DriverManager.getConnection(url, user, password)) {
+                connection.setSchema(schema);
+                var jdbc = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
+                Document existing = new DocumentRepository(jdbc).findVisible(document, actor).orElseThrow();
+                assertEquals("PLAIN_TEXT_V1", existing.collaborationFormat());
+                assertEquals("Existing content", existing.title());
+                assertArrayEquals(checkpoint, jdbc.queryForObject("SELECT checkpoint FROM document_streams WHERE document_id=?", byte[].class, document));
+                assertArrayEquals(update, jdbc.queryForObject("SELECT payload FROM document_updates WHERE document_id=? AND sequence=1", byte[].class, document));
+                assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_update_outbox WHERE document_id=?", Integer.class, document));
+                assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                        () -> jdbc.update("UPDATE documents SET collaboration_format='RICH_TEXT_V1' WHERE id=?", document));
+            }
+        } finally {
+            try (var connection = DriverManager.getConnection(url, user, password); var statement = connection.createStatement()) {
+                statement.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+            }
+        }
+    }
     private static String required(String name) {
         String value = System.getenv(name);
         if (value == null || value.isBlank()) throw new IllegalStateException(name + " is required");

@@ -1,5 +1,7 @@
 # Lesson 25 — Persist offline drafts and pending updates
 
+> [Lesson 26](26-reconnect-and-reconcile.md) subsequently adds automatic reconnect; manual reload descriptions below record the Lesson 25 behavior.
+
 ## 1. What this lesson adds
 
 The plain-text editor stores a Yjs document snapshot and a separate queue of unacknowledged updates in IndexedDB, scoped to the signed-in stored-user ID, workspace, document and epoch. Each pending entry keeps the same UUID and exact update bytes across reloads. The editor writes a snapshot and its queue together in one IndexedDB transaction **before** it sends the update. A successful local write is not a server commit.

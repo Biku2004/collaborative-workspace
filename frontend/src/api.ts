@@ -27,8 +27,8 @@ async function checked(path: string, init?: RequestInit): Promise<Response> {
 }
 
 async function csrf(): Promise<Csrf> { return (await checked('/api/csrf')).json() as Promise<Csrf>; }
-export async function currentUser(): Promise<CurrentUser> {
-  return (await checked('/api/me')).json() as Promise<CurrentUser>;
+export async function currentUser(signal?: AbortSignal): Promise<CurrentUser> {
+  return (await checked('/api/me', { signal })).json() as Promise<CurrentUser>;
 }
 export async function login(email: string, password: string): Promise<CurrentUser> {
   const token = await csrf();

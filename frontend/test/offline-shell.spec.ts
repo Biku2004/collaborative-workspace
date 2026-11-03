@@ -10,11 +10,13 @@ test('production shell restores offline edits and retries their stable IDs after
       let socket: WebSocket | undefined;
       const ids: string[] = [];
       let drop = false, dropped = false;
-      const hooks = window as unknown as Window & { closeDocumentSocket: () => void; sentUpdateIds: () => string[]; dropNextSaved: () => void; savedWasDropped: () => boolean };
+      let block = false;
+      const hooks = window as unknown as Window & { closeDocumentSocket: () => void; sentUpdateIds: () => string[]; dropNextSaved: () => void; savedWasDropped: () => boolean; blockUpdates: () => void };
       hooks.closeDocumentSocket = () => socket?.close();
       hooks.sentUpdateIds = () => ids;
       hooks.dropNextSaved = () => { drop = true; dropped = false; };
       hooks.savedWasDropped = () => dropped;
+      hooks.blockUpdates = () => { block = true; };
       const onmessage = Object.getOwnPropertyDescriptor(WebSocket.prototype, 'onmessage')!;
       Object.defineProperty(WebSocket.prototype, 'onmessage', {
         configurable: true, enumerable: onmessage.enumerable, get: onmessage.get,
@@ -32,7 +34,7 @@ test('production shell restores offline edits and retries their stable IDs after
         if (this.url.includes('/socket') && typeof data === 'string') {
           socket = this;
           const message = JSON.parse(data) as { type: string; updateId?: string };
-          if (message.type === 'SUBMIT_UPDATE' && message.updateId) ids.push(message.updateId);
+          if (message.type === 'SUBMIT_UPDATE' && message.updateId) { if (block) return; ids.push(message.updateId); }
         }
         original.call(this, data);
       };
@@ -78,6 +80,8 @@ test('production shell restores offline edits and retries their stable IDs after
       return requests.flat();
     });
     expect(cachedRequests.every(path => path === '/' || path.startsWith('/assets/'))).toBe(true);
+    // Keep Alice's socket from uploading while the shared session changes accounts.
+    await page.evaluate(() => (window as unknown as Window & { blockUpdates: () => void }).blockUpdates());
     await context.setOffline(false);
     // Switch the shared browser session to Bob; Alice's pending bytes must not be sent as Bob.
     const csrf = await (await context.request.get('/api/csrf')).json() as { token: string; headerName: string };

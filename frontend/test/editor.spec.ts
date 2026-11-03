@@ -91,6 +91,7 @@ test('two independent browser contexts synchronize concurrent inserts and delete
     const draft = (await a.inputValue()) + ' unsaved draft';
     await a.fill(draft);
     await expect(pageA.locator('.editor-status')).toHaveText('Saving…');
+    await first.setOffline(true);
     await pageA.evaluate(() => (window as unknown as Window & { closeUpdateSocket: () => void }).closeUpdateSocket());
     await expect(pageA.locator('.editor-status')).toContainText(/Offline|Saved locally/);
     await expect(a).not.toHaveAttribute('readonly');
@@ -112,6 +113,7 @@ test('two independent browser contexts synchronize concurrent inserts and delete
     pageA.once('dialog', dialog => void dialog.dismiss());
     await pageA.getByRole('button', { name: /Back to documents/ }).click();
     await expect(a).toBeVisible();
+    await first.setOffline(false);
     pageA.once('dialog', dialog => void dialog.accept());
     await pageA.reload();
     await pageA.getByRole('button', { name: new RegExp(workspace) }).click();

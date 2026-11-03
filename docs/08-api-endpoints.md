@@ -1,4 +1,4 @@
-# API endpoint reference through Lesson 25
+# API endpoint reference through Lesson 26
 
 This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 

@@ -161,7 +161,7 @@ export default function App() {
   const localDocument = readOfflineContext();
   return <div className="app-shell">
     <header className="topbar"><div className="brand"><span className="brand-mark">W</span> WORKSPACE</div>
-      <div className="account"><span className="account-name">{user.username}{offline ? ' / Offline' : ''}</span>{offline ? <button className="quiet" type="button" onClick={closeOffline}>Close offline view</button> : <button className="quiet" type="button" onClick={signOut} disabled={busy}>{busy ? 'Signing out…' : 'Sign out'} <span aria-hidden="true">↗</span></button>}</div></header>
+      <div className="account"><span className="account-name">{user.username}{offline ? ' / Local view' : ''}</span>{offline ? <button className="quiet" type="button" onClick={closeOffline}>Close local view</button> : <button className="quiet" type="button" onClick={signOut} disabled={busy}>{busy ? 'Signing out…' : 'Sign out'} <span aria-hidden="true">↗</span></button>}</div></header>
     <main className="dashboard"><div className="page-heading"><div><p className="eyebrow">YOUR WORKSPACE / DOCUMENTS</p><h1>Make room for<br /><em>good ideas.</em></h1></div><p className="page-summary">Your teams and their shared documents, all in one place.</p></div>
       <div className="workspace-layout"><section className="sidebar" aria-labelledby="workspaces-heading"><div className="section-title"><h2 id="workspaces-heading">Workspaces</h2><span>01</span></div>
         <p className="muted small">Choose a workspace to see its documents.</p>

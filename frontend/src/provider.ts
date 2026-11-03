@@ -2,7 +2,7 @@ import * as Y from 'yjs';
 import { LocalDocumentStore } from './localDocumentStore';
 import { ApiError, currentUser } from './api';
 
-type Phase = 'connecting' | 'syncing' | 'ready' | 'offline' | 'failed';
+type Phase = 'connecting' | 'syncing' | 'ready' | 'offline' | 'waiting' | 'failed';
 export type EditorState = { phase: Phase; text: string; pending: number; message: string };
 type Pending = { id: string; payload: string };
 type UpdateEvent = { sequence: number; payload: string };
@@ -30,7 +30,7 @@ function encode(bytes: Uint8Array): string {
   return btoa(value);
 }
 
-/** A deliberately small, online-only custom provider. It is not y-websocket. */
+/** A deliberately small custom plain-text provider. It is not y-websocket. */
 export class PlainTextProvider {
   private readonly doc = new Y.Doc();
   private readonly text = this.doc.getText('content');
@@ -50,11 +50,18 @@ export class PlainTextProvider {
   private disposed = false;
   private syncTimer: ReturnType<typeof setTimeout> | undefined;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
+  private connectionTimer: ReturnType<typeof setTimeout> | undefined;
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  private retryAttempt = 0;
+  private checkingIdentity = false;
+  private identityAbort?: AbortController;
 
   constructor(private readonly userId: string, private readonly workspaceId: string, private readonly documentId: string,
               private readonly changed: (state: EditorState) => void) {
     this.text.observe(this.onText);
     this.doc.on('update', this.onUpdate);
+    window.addEventListener('online', this.onOnline);
+    window.addEventListener('offline', this.onOffline);
     this.emit();
     // React can mount and immediately clean up an editor in development StrictMode.
     // Defer acquiring the cross-tab lock until that cleanup has had a chance to run.
@@ -74,27 +81,56 @@ export class PlainTextProvider {
         this.hasLocalState = true;
         this.emit();
       }
-      try {
-        const current = await currentUser();
-        if (this.disposed) return;
-        if (current.id !== this.userId) { this.fail('The active account changed. Your draft remains on this device.'); return; }
-        this.connect();
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 0) this.goOffline();
-        else this.fail('Your session could not be verified. Your draft remains on this device.');
-      }
+      await this.attemptConnection();
     } catch { this.fail('Local storage is unavailable or the document is open in another tab.'); }
+  }
+
+  private readonly onOnline = () => {
+    if (this.phase !== 'offline' && this.phase !== 'waiting') return;
+    clearTimeout(this.retryTimer); this.retryTimer = undefined;
+    void this.attemptConnection();
+  };
+
+  private readonly onOffline = () => {
+    if (!this.store || this.disposed || this.phase === 'failed') return;
+    this.identityAbort?.abort();
+    this.goOffline();
+  };
+
+  private async attemptConnection(): Promise<void> {
+    if (this.disposed || this.phase === 'failed' || this.checkingIdentity) return;
+    this.checkingIdentity = true;
+    const controller = new AbortController(); this.identityAbort = controller;
+    const deadline = setTimeout(() => controller.abort(), 8000);
+    try {
+      const current = await currentUser(controller.signal);
+      if (this.disposed || (this.phase as Phase) === 'failed') return;
+      if (current.id !== this.userId) { this.fail('The active account changed. Your draft remains on this device.'); return; }
+      this.phase = 'connecting'; this.message = 'Reconnecting…'; this.emit();
+      this.connect();
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 0 || error.status >= 500)) this.goOffline();
+      else this.fail('Your session could not be verified. Your draft remains on this device.');
+    } finally { clearTimeout(deadline); this.identityAbort = undefined; this.checkingIdentity = false; }
+  }
+
+  private scheduleRetry(): void {
+    if (this.disposed || this.phase === 'failed' || this.retryTimer) return;
+    const delay = Math.min(30000, 1000 * 2 ** Math.min(this.retryAttempt++, 5));
+    this.retryTimer = setTimeout(() => { this.retryTimer = undefined; void this.attemptConnection(); }, delay + Math.floor(Math.random() * 250));
   }
 
   private connect(): void {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this.socket = new WebSocket(`${protocol}//${location.host}/api/workspaces/${encodeURIComponent(this.workspaceId)}/socket`);
-    this.socket.onopen = () => this.send({ type: 'HELLO', version: 1 });
-    this.socket.onmessage = event => this.onMessage(event.data);
+    const socket = new WebSocket(`${protocol}//${location.host}/api/workspaces/${encodeURIComponent(this.workspaceId)}/socket`);
+    this.socket = socket;
+    this.connectionTimer = setTimeout(() => { if (this.socket === socket) this.goOffline(); }, 10000);
+    socket.onopen = () => { if (this.socket === socket) this.send({ type: 'HELLO', version: 1 }); };
+    socket.onmessage = event => { if (this.socket === socket) this.onMessage(event.data); };
     // Wait for close: a policy close can indicate revoked access, unlike a network drop.
-    this.socket.onerror = () => {};
-    this.socket.onclose = event => {
-      if (this.disposed) return;
+    socket.onerror = () => {};
+    socket.onclose = event => {
+      if (this.disposed || this.socket !== socket) return;
       if (event.code === 1008) this.fail('Access was denied or revoked. Your local draft remains on this device.');
       else this.goOffline();
     };
@@ -149,21 +185,21 @@ export class PlainTextProvider {
 
   private send(value: Record<string, unknown>): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN || this.socket.bufferedAmount > 16384) {
-      this.fail('Connection is unavailable or congested. Copy any unsaved text before leaving.'); return;
+      this.goOffline(); return;
     }
     try { this.socket.send(JSON.stringify(value)); }
-    catch { this.fail('Connection closed before the update could be sent. Copy any unsaved text before leaving.'); }
+    catch { this.goOffline(); }
   }
   private sendNext(): void {
     if (this.phase !== 'ready' || this.inFlight || !this.pending.length || this.revision !== this.durableRevision) return;
     const next = this.pending[0]!; this.inFlight = true;
-    this.saveTimer = setTimeout(() => this.fail('Save confirmation timed out. Copy your unsaved text before leaving.'), 10000);
+    this.saveTimer = setTimeout(() => this.goOffline(), 10000);
     this.send({ type: 'SUBMIT_UPDATE', version: 1, epoch: 0, updateId: next.id, payload: next.payload });
   }
   private requestSync(): void {
     if (this.requestedAfter !== null || this.phase === 'failed') return;
     this.phase = 'syncing'; this.message = 'Synchronizing…'; this.requestedAfter = this.lastApplied; this.emit();
-    this.syncTimer = setTimeout(() => this.fail('Synchronization timed out. Copy any unsaved text before leaving.'), 10000);
+    this.syncTimer = setTimeout(() => this.goOffline(), 10000);
     this.send({ type: 'SYNC', version: 1, epoch: 0, after: this.requestedAfter });
   }
   private apply(event: UpdateEvent): void {
@@ -185,11 +221,16 @@ export class PlainTextProvider {
       if (typeof value !== 'string' || new TextEncoder().encode(value).byteLength > 16384) throw new Error('Invalid frame');
       const event = record(JSON.parse(value));
       if (event.version !== 1 || typeof event.type !== 'string') throw new Error('Unsupported protocol');
+      if (['HEAD', 'UPDATE', 'SYNC_PAGE', 'SAVED'].includes(event.type) && integer(event.epoch) !== 0) {
+        this.fail('The document version changed. Your local draft remains on this device; copy it before leaving.'); return;
+      }
       if (event.type === 'WELCOME') {
-        if (this.phase !== 'connecting' || event.workspaceId !== this.workspaceId || event.userId !== this.userId) throw new Error('Unexpected workspace or account');
+        if (this.phase !== 'connecting' || event.workspaceId !== this.workspaceId) throw new Error('Unexpected workspace');
+        if (event.userId !== this.userId) { this.fail('The active account changed. Copy your local draft before leaving.'); return; }
         this.send({ type: 'JOIN', version: 1, documentId: this.documentId });
       } else if (event.type === 'JOINED') {
         if (this.phase !== 'connecting' || event.documentId !== this.documentId) throw new Error('Unexpected document');
+        clearTimeout(this.connectionTimer);
         this.requestSync();
       } else if (event.type === 'HEAD') {
         if (event.documentId !== this.documentId || integer(event.epoch) !== 0) throw new Error('Document epoch changed');
@@ -212,35 +253,40 @@ export class PlainTextProvider {
         this.highestSeen = Math.max(this.highestSeen, head);
         clearTimeout(this.syncTimer); this.requestedAfter = null;
         if (this.lastApplied < this.highestSeen) this.requestSync();
-        else { this.initialReplayComplete = true; this.phase = 'ready'; this.message = this.pending.length ? 'Saving…' : 'Up to date'; this.emit(); this.persist(); }
+        else { if (!this.pending.length) this.retryAttempt = 0; this.initialReplayComplete = true; this.phase = 'ready'; this.message = this.pending.length ? 'Saving…' : 'Up to date'; this.emit(); this.persist(); }
       } else if (event.type === 'SAVED') {
         if (!this.inFlight || !this.pending.length || event.updateId !== this.pending[0]!.id || event.documentId !== this.documentId || integer(event.epoch) !== 0) throw new Error('Unexpected acknowledgement');
-        integer(event.sequence); clearTimeout(this.saveTimer); this.pending.shift();
+        integer(event.sequence); clearTimeout(this.saveTimer); this.retryAttempt = 0; this.pending.shift();
         this.message = this.pending.length ? 'Saving…' : 'Confirming local state…'; this.emit();
-        this.persist(() => { this.inFlight = false; this.message = this.pending.length ? 'Saving…' : 'Saved'; this.emit(); });
+        const acknowledgedSocket = this.socket;
+        this.persist(() => { if (this.socket === acknowledgedSocket) { this.inFlight = false; this.message = this.pending.length ? 'Saving…' : 'Saved'; this.emit(); } });
       } else if (event.type === 'TEST_MESSAGE' && event.documentId === this.documentId) {
         // Lesson 20's transient messages are not document changes.
       } else if (event.type === 'REJECTED') {
-        this.fail('The server could not save or synchronize this document. Copy any unsaved text before leaving.');
+        if (event.code === 'ENGINE_UNAVAILABLE' || event.code === 'RETRY_HEAD_CHANGED') { this.goOffline(); return; }
+        if (event.code === 'EPOCH_CHANGED') this.fail('The document version changed. Your local draft remains on this device; copy it before leaving.');
+        else if (event.code === 'ACCESS_DENIED' || event.code === 'NOT_FOUND' || event.code === 'DOCUMENT_ARCHIVED')
+          this.fail('The server rejected access or the document is unavailable. Your local draft remains on this device.');
+        else this.fail('The server rejected the update. Your local draft remains on this device; copy it before leaving.');
       } else {
         throw new Error('Unsupported message');
       }
     } catch { this.fail('The document could not be synchronized safely. Copy any unsaved text before leaving.'); }
   }
   private goOffline(): void {
-    if (this.disposed || this.phase === 'failed' || this.phase === 'offline') return;
-    clearTimeout(this.syncTimer); clearTimeout(this.saveTimer);
+    if (this.disposed || this.phase === 'failed') return;
+    clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer);
     this.inFlight = false; this.requestedAfter = null;
-    // Editing an empty, never-synchronized document offline would be misleading.
-    if (!this.store || !this.hasLocalState) {
-      this.fail('The document has not been saved locally yet. Connect before editing.'); return;
-    }
-    this.phase = 'offline'; this.message = 'Offline; changes are pending server confirmation'; this.emit();
-    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) this.socket.close();
+    const previous = this.socket; this.socket = undefined;
+    this.phase = this.store && this.hasLocalState ? 'offline' : 'waiting';
+    this.message = this.phase === 'offline' ? 'Offline; changes are pending server confirmation' : 'Waiting for the first complete synchronization…';
+    this.emit();
+    if (previous && (previous.readyState === WebSocket.OPEN || previous.readyState === WebSocket.CONNECTING)) previous.close();
+    this.scheduleRetry();
   }
   private fail(message: string): void {
     if (this.disposed || this.phase === 'failed') return;
-    clearTimeout(this.syncTimer); clearTimeout(this.saveTimer);
+    clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer); clearTimeout(this.retryTimer);
     this.phase = 'failed'; this.message = message; this.emit();
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
       try { this.socket.close(); } catch { /* Connection already closed. */ }
@@ -248,7 +294,7 @@ export class PlainTextProvider {
   }
   private emit(): void { if (!this.disposed) this.changed({ phase: this.phase, text: this.text.toString(), pending: this.pending.length, message: this.message }); }
   destroy(): void {
-    this.disposed = true; clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); this.text.unobserve(this.onText); this.doc.off('update', this.onUpdate);
+    this.disposed = true; this.identityAbort?.abort(); clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer); clearTimeout(this.retryTimer); window.removeEventListener('online', this.onOnline); window.removeEventListener('offline', this.onOffline); this.text.unobserve(this.onText); this.doc.off('update', this.onUpdate);
     this.doc.destroy(); this.socket?.close();
     if (this.store) void this.store.close().catch(() => {});
   }

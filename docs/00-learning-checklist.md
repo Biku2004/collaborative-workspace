@@ -41,7 +41,7 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 - [x] **Lesson 23 — Minimal browser application.** See [Lesson 23](lessons/23-minimal-browser-application.md). Stored-user login and authorized paginated lists are browser-tested.
 - [x] **Lesson 24 — Plain-text collaborative editor.** See [Lesson 24](lessons/24-plain-text-collaborative-editor.md). Two independent browser contexts converge through the server.
 - [x] **Lesson 25 — Offline persistence and a pending queue.** See [Lesson 25](lessons/25-offline-persistence.md). Browser-stored drafts and stable retry IDs are tested; browser storage is not a server durability guarantee.
-- [ ] Add automatic reconnection and reconciliation in Lesson 26.
+- [x] **Lesson 26 — Reconnect and reconcile.** See [Lesson 26](lessons/26-reconnect-and-reconcile.md). Automatic reconnect rechecks identity and authorization, replays gaps and retains rejected local work.
 - [ ] Add the required TipTap rich-text editor, followed by collaborator presence.
 - [ ] Add checkpoints, named revisions and safe restore in separate lessons.
 - [ ] Add search, monitoring, multi-instance communication and failure testing as separate milestones.

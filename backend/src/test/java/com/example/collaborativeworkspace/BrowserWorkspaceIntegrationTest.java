@@ -90,6 +90,7 @@ class BrowserWorkspaceIntegrationTest {
             sharedWorkspace = workspaces.create(alice, sharedName).id();
             membership.setRole(sharedWorkspace, alice, new ChangeWorkspaceMemberRequest(bob, WorkspaceRole.EDITOR));
             documents.create(sharedWorkspace, alice, "Live notes");
+            documents.create(sharedWorkspace, alice, "Reconnect notes");
             membership.setRole(bobWorkspace, bob, new ChangeWorkspaceMemberRequest(alice, WorkspaceRole.VIEWER));
             for (int i = 0; i < 20; i++) documents.create(aliceWorkspace, alice, "Document " + i);
             documents.create(aliceWorkspace, alice, "<img src=x onerror=alert(1)>");
@@ -108,7 +109,7 @@ class BrowserWorkspaceIntegrationTest {
                 Thread.sleep(50);
             }
             assertTrue(ready, () -> "Vite failed to start:\n" + safeRead(viteLog));
-            var runner = new ProcessBuilder("node", "node_modules/@playwright/test/cli.js", "test", "workspace.spec.ts", "editor.spec.ts", "local-document-store.spec.ts", "partial-sync.spec.ts", "--reporter=line")
+            var runner = new ProcessBuilder("node", "node_modules/@playwright/test/cli.js", "test", "a-reconnect.spec.ts", "workspace.spec.ts", "editor.spec.ts", "local-document-store.spec.ts", "partial-sync.spec.ts", "--reporter=line")
                     .directory(frontend.toFile()).redirectErrorStream(true).redirectOutput(browserLog.toFile());
             var env = runner.environment();
             env.put("WORKSPACE_E2E_ORIGIN", "http://127.0.0.1:" + frontendPort);

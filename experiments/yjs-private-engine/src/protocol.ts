@@ -1,7 +1,7 @@
 import contract from '@workspace/rich-text-schema-v1/contract.json' with { type: 'json' };
 
-export const LIMITS = Object.freeze({ bodyBytes: 65536, updates: 16, updateBytes: 8192, totalBytes: 32768, richCheckpointBytes: 32768,
-  outputBytes: 65536, richOutputBytes: 196608, textUnits: 16384, activeWorkers: 2, deadlineMs: 3000 });
+export const LIMITS = Object.freeze({ bodyBytes: 65536, richBodyBytes: 131072, updates: 16, updateBytes: 8192, totalBytes: 32768, richCheckpointBytes: 65536,
+  outputBytes: 65536, richOutputBytes: 262144, textUnits: 16384, activeWorkers: 2, deadlineMs: 3000 });
 
 export class InputError extends Error {
   constructor(readonly code: string) { super(code); }

@@ -80,7 +80,7 @@ This verifies opaque byte preservation, not a Java HTTP client, authorization, p
 | `TIMEOUT` | 504 | The request deadline expired; the worker is terminated. |
 | `ENGINE_FAILURE` | 500 | Worker startup or execution failed. |
 
-The current limits are 64 KiB request body, 16 updates, 8 KiB per update and returned checkpoint, 32 KiB total decoded updates, 16,384 UTF-16 text units, 64 KiB response, two active workers and a three-second default deadline. A checkpoint larger than the per-update input limit is rejected so every successful checkpoint can be submitted again. Worker JavaScript heap settings provide additional bounds, but do not strictly cap all process or external memory. Limits are local starting values, not benchmarked service targets.
+For the original plain-text v1 path, the limits are a 64 KiB HTTP request body, 16 updates, 8 KiB per update and returned checkpoint, 32 KiB total decoded updates, 16,384 UTF-16 text units and a 64 KiB response. The later rich-text endpoint has a separate 128 KiB HTTP request-body limit. Both paths use two active workers and a three-second default deadline. A v1 checkpoint larger than the per-update input limit is rejected so every successful checkpoint can be submitted again. Worker JavaScript heap settings provide additional bounds, but do not strictly cap all process or external memory. Limits are local starting values, not benchmarked service targets; see [Lesson 27](27-rich-text-design.md) for the distinct rich-text limits.
 
 ## 6. Tests and failure behavior
 

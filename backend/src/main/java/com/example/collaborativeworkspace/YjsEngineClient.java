@@ -18,8 +18,8 @@ import tools.jackson.databind.json.JsonMapper;
 @Component
 @Profile("dev")
 public class YjsEngineClient {
-    private static final int MAX_UPDATE_BYTES = 8192, MAX_RICH_CHECKPOINT_BYTES = 32768, MAX_TOTAL_BYTES = 32768, MAX_UPDATES = 16,
-            MAX_RESPONSE_BYTES = 65536, MAX_RICH_RESPONSE_BYTES = 196608;
+    private static final int MAX_UPDATE_BYTES = 8192, MAX_RICH_CHECKPOINT_BYTES = 65536, MAX_TOTAL_BYTES = 32768, MAX_UPDATES = 16,
+            MAX_RESPONSE_BYTES = 65536, MAX_RICH_RESPONSE_BYTES = 262144;
     private final URI endpoint;
     private final URI richEndpoint;
     private final HttpClient client;

@@ -124,7 +124,7 @@ test('a valid bounded rich document fits the response even when JSON expands its
       const result = await post(legacyUrl.replace('/v1/', '/v2/'), { version: 2, format: 'RICH_TEXT_V1', updates: updates.map(b64) });
       assert.equal(result.status, 200);
       assert.equal(result.body.initialized, true);
-      assert.ok(Buffer.from(result.body.checkpoint as string, 'base64').length <= 32768);
+      assert.ok(Buffer.from(result.body.checkpoint as string, 'base64').length <= 65536);
     });
   } finally { doc.destroy(); }
 });
@@ -207,6 +207,11 @@ test('malformed, oversized, unsupported and invalid requests are rejected', asyn
     }
     const huge = await fetch(url, { method: 'POST', body: 'x'.repeat(LIMITS.bodyBytes + 1) });
     assert.equal(huge.status, 413);
+    const richUrl = url.replace('/v1/reconstruct', '/v2/reconstruct');
+    const withinRichBody = await fetch(richUrl, { method: 'POST', body: 'x'.repeat(LIMITS.bodyBytes + 1) });
+    assert.equal(withinRichBody.status, 400); // The body fits v2, but is not JSON.
+    const hugeRich = await fetch(richUrl, { method: 'POST', body: 'x'.repeat(LIMITS.richBodyBytes + 1) });
+    assert.equal(hugeRich.status, 413);
     const doc = new Y.Doc(); doc.getText('other').insert(0, 'wrong root');
     const unsupported = await post(url, { version: 1, updates: [b64(Y.encodeStateAsUpdate(doc))] });
     doc.destroy();

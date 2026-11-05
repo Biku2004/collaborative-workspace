@@ -122,7 +122,7 @@ test('malformed or excessive position metadata is rejected before clients consum
   } finally { for (const doc of [tooLong, malformed, unknown, missingId]) doc.destroy(); }
 });
 
-test('position history accepts 64 bounded records and rejects the next record as a limit', () => {
+test('position history accepts 128 bounded records and rejects the next record as a limit', () => {
   const doc = prosemirrorJSONToYDoc(schema, example, contract.root);
   try {
     const metadata = doc.getMap(`__tiptap_position_migrations:root:${contract.root}`);
@@ -130,7 +130,7 @@ test('position history accepts 64 bounded records and rejects the next record as
       const client = doc.clientID, clock = Y.getState(doc.store, client);
       metadata.set(`${client}:${clock}`, { version: 1, client, clock, seen: [], transfers: [] });
     };
-    for (let i = 0; i < 64; i++) append();
+    for (let i = 0; i < 128; i++) append();
     const baseline = reconstructRichCandidate([Y.encodeStateAsUpdate(doc)]).checkpoint;
     const vector = Y.encodeStateVector(doc);
     append();
@@ -178,7 +178,7 @@ test('rich candidate rejects trailing bytes and unsupported attributes or marks'
   } finally { malformedMark.destroy(); }
 });
 
-test('rich candidate rejects a missing dependency and an oversized checkpoint', () => {
+test('rich candidate rejects a missing dependency and excessive text', () => {
   const base = prosemirrorJSONToYDoc(schema, example, contract.root);
   try {
     const vector = Y.encodeStateVector(base);
@@ -189,9 +189,21 @@ test('rich candidate rejects a missing dependency and an oversized checkpoint', 
   const large = new Y.Doc();
   try {
     const paragraph = new Y.XmlElement('paragraph'), text = new Y.XmlText();
-    large.getXmlFragment(contract.root).insert(0, [paragraph]); paragraph.insert(0, [text]); text.insert(0, '字'.repeat(15000));
+    large.getXmlFragment(contract.root).insert(0, [paragraph]); paragraph.insert(0, [text]); text.insert(0, '字'.repeat(16385));
     assert.throws(() => reconstructRichCandidate([Y.encodeStateAsUpdate(large)]), /TOO_LARGE/);
   } finally { large.destroy(); }
+});
+
+test('rich candidate rejects a checkpoint beyond the bounded internal limit', () => {
+  const doc = new Y.Doc();
+  try {
+    const paragraph = new Y.XmlElement('paragraph'), text = new Y.XmlText();
+    doc.getXmlFragment(contract.root).insert(0, [paragraph]); paragraph.insert(0, [text]); text.insert(0, 'x'.repeat(2000));
+    for (let i = 0; i < 2000; i += 2) text.format(i, 1, { bold: {} });
+    const update = Y.encodeStateAsUpdate(doc);
+    assert.ok(update.byteLength > 65536);
+    assert.throws(() => reconstructRichCandidate([update]), /TOO_LARGE/);
+  } finally { doc.destroy(); }
 });
 
 test('a rich checkpoint larger than a wire update can be reused for the next commit', () => {
@@ -200,7 +212,7 @@ test('a rich checkpoint larger than a wire update can be reused for the next com
     const paragraph = new Y.XmlElement('paragraph'), text = new Y.XmlText();
     doc.getXmlFragment(contract.root).insert(0, [paragraph]); paragraph.insert(0, [text]); text.insert(0, 'x'.repeat(9000));
     const baseline = reconstructRichCandidate([Y.encodeStateAsUpdate(doc)]).checkpoint;
-    assert.ok(baseline.byteLength > 8192 && baseline.byteLength <= 32768);
+    assert.ok(baseline.byteLength > 8192 && baseline.byteLength <= 65536);
     const vector = Y.encodeStateVector(doc);
     text.insert(text.length, '!');
     const next = reconstructRichCandidate([baseline, Y.encodeStateAsUpdate(doc, vector)], true);

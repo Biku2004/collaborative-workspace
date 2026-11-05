@@ -26,7 +26,7 @@ class YjsEngineClientTest {
                     case 4 -> "{\"version\":2,\"status\":\"candidate\",\"format\":\"RICH_TEXT_V1\",\"initialized\":true,\"document\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\"}]},\"checkpoint\":\"bad!\"}";
                     case 6 -> "{\"version\":2,\"status\":\"candidate\",\"format\":\"RICH_TEXT_V1\",\"initialized\":false,\"document\":null,\"checkpoint\":\"AAA=\"}";
                     case 7 -> "{\"version\":2,\"status\":\"candidate\",\"format\":\"RICH_TEXT_V1\",\"initialized\":true,\"document\":{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"text\":\"" + "x".repeat(70000) + "\"}]},\"checkpoint\":\"AAA=\"}";
-                    case 8 -> "x".repeat(200000);
+                    case 8 -> "x".repeat(270000);
                     default -> "{\"version\":2,\"status\":\"candidate\",\"format\":\"RICH_TEXT_V1\",\"initialized\":true,\"document\":{\"type\":\"doc\",\"content\":[]},\"checkpoint\":\"AAA=\"}";
                 };
                 byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
@@ -46,7 +46,7 @@ class YjsEngineClientTest {
             assertEquals("commit", sent.path("mode").asText());
             assertEquals(2, sent.path("updates").size());
             assertTrue(client.reconstructRichForCommit(List.of(new byte[9000], new byte[] {1})).initialized());
-            assertThrows(IllegalArgumentException.class, () -> client.reconstructRichForCommit(List.of(new byte[32769], new byte[] {1})));
+            assertThrows(IllegalArgumentException.class, () -> client.reconstructRichForCommit(List.of(new byte[65537], new byte[] {1})));
             assertThrows(IllegalArgumentException.class, () -> client.reconstructRichForCommit(List.of(new byte[] {0}, new byte[8193])));
             assertThrows(IllegalArgumentException.class, () -> client.reconstructRichForCommit(List.of()));
             mode.set(6);

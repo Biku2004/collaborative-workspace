@@ -3,7 +3,7 @@ import { InputError } from './protocol.js';
 
 // TipTap's pinned Yjs binding stores structural position migrations in this map.
 // Bound both the records and expanded transfer ranges before clients consume them.
-const MAX_RECORDS = 64, MAX_SEEN = 32, MAX_TRANSFERS = 512, MAX_EXPANDED = 8192;
+const MAX_RECORDS = 128, MAX_SEEN = 32, MAX_TRANSFERS = 1024, MAX_EXPANDED = 16384;
 const MAX_CLIENT_ID = 0xffffffff;
 
 function record(value: unknown, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> {

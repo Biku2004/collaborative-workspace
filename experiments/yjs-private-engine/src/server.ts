@@ -36,7 +36,7 @@ export function createEngineServer(deadlineMs: number = LIMITS.deadlineMs, worke
     req.on('data', (chunk: Buffer) => {
       if (finished) return;
       bodyBytes += chunk.length;
-      if (bodyBytes > LIMITS.bodyBytes) { finish(413, { code: 'TOO_LARGE' }); req.resume(); return; }
+      if (bodyBytes > (rich ? LIMITS.richBodyBytes : LIMITS.bodyBytes)) { finish(413, { code: 'TOO_LARGE' }); req.resume(); return; }
       chunks.push(chunk);
     });
     req.on('end', () => {

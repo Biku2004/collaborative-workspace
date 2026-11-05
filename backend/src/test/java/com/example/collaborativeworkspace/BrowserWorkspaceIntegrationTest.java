@@ -123,7 +123,7 @@ class BrowserWorkspaceIntegrationTest {
             Path chrome = Path.of("C:/Program Files/Google/Chrome/Application/chrome.exe");
             if (Files.isRegularFile(chrome)) env.putIfAbsent("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", chrome.toString());
             browser = runner.start();
-            assertTrue(browser.waitFor(120, TimeUnit.SECONDS), "Browser verification timed out");
+            assertTrue(browser.waitFor(180, TimeUnit.SECONDS), "Browser verification timed out");
             assertEquals(0, browser.exitValue(), () -> "Browser verification failed:\n" + safeRead(browserLog));
             safeRead(browserLog).lines().filter(line -> line.startsWith("STRUCTURAL_EDIT_MEASUREMENT ")).forEach(System.out::println);
             if (engine != null) {

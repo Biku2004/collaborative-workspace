@@ -119,6 +119,43 @@ class LegacyDocumentMigrationTest {
             }
         }
     }
+    @Test
+    void v14PreservesStoredCheckpointAndOnlyExpandsTheCheckpointConstraint() throws Exception {
+        String url = TestDatabaseGuard.verifiedUrl(), user = required("WORKSPACE_TEST_DB_USER"), password = required("WORKSPACE_TEST_DB_PASSWORD");
+        String schema = "capacity_" + UUID.randomUUID().toString().replace("-", "");
+        var migrations = Flyway.configure().dataSource(url, user, password).schemas(schema).defaultSchema(schema);
+        UUID actor = UUID.randomUUID(), workspace = UUID.randomUUID(), document = UUID.randomUUID();
+        byte[] baseline = new byte[32768];
+        new java.util.Random(27).nextBytes(baseline);
+        try {
+            migrations.target("13").load().migrate();
+            try (var connection = DriverManager.getConnection(url, user, password)) {
+                connection.setSchema(schema);
+                var jdbc = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
+                jdbc.update("INSERT INTO app_users (id,email,password_hash) VALUES (?,?,?)", actor, "migration@example.com", "fixture");
+                jdbc.update("INSERT INTO workspaces (id,name,created_by) VALUES (?,?,?)", workspace, "fixture", actor);
+                jdbc.update("INSERT INTO documents (id,workspace_id,title,collaboration_format) VALUES (?,?,?,'RICH_TEXT_V1')", document, workspace, "fixture");
+                jdbc.update("INSERT INTO document_streams (document_id,checkpoint) VALUES (?,?)", document, baseline);
+                String setCheckpoint = "UPDATE document_streams SET checkpoint=? WHERE document_id=?";
+                assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                        () -> jdbc.update(setCheckpoint, new byte[32769], document));
+                migrations.target("14").load().migrate();
+                assertArrayEquals(baseline, jdbc.queryForObject("SELECT checkpoint FROM document_streams WHERE document_id=?", byte[].class, document));
+                assertEquals(1, jdbc.update(setCheckpoint, new byte[65536], document));
+                assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                        () -> jdbc.update(setCheckpoint, new byte[65537], document));
+                String insertUpdate = "INSERT INTO document_updates(document_id,epoch,sequence,update_id,actor_id,payload,payload_sha256) VALUES (?,0,1,?,?,?,?)";
+                assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                        () -> jdbc.update(insertUpdate, document, UUID.randomUUID(), actor, new byte[8193], new byte[32]));
+                assertEquals(1, jdbc.update(insertUpdate, document, UUID.randomUUID(), actor, new byte[8192], new byte[32]));
+            }
+        } finally {
+            try (var connection = DriverManager.getConnection(url, user, password); var statement = connection.createStatement()) {
+                statement.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+            }
+        }
+    }
+
     private static String required(String name) {
         String value = System.getenv(name);
         if (value == null || value.isBlank()) throw new IllegalStateException(name + " is required");

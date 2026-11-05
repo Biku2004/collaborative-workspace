@@ -43,7 +43,7 @@ The committed relay and replay contract is described in [Lesson 22](lessons/22-b
 
 The local browser login and list flow is described in [Lesson 23](lessons/23-minimal-browser-application.md).
 
-Lesson 27 is in progress: document metadata includes `collaborationFormat`. Existing documents remain `PLAIN_TEXT_V1`; migrations preserve their history. Rich-text creation, replay and writes require the `workspace.rich.enabled` gate, which is disabled by default.
+Lesson 27's learning criteria are verified: document metadata includes `collaborationFormat`. Existing documents remain `PLAIN_TEXT_V1`; migrations preserve their history. Rich-text creation, replay and writes require the `workspace.rich.enabled` gate, which is disabled by default. The feature's security and operational limitations remain open; see [Lesson 27](lessons/27-rich-text-design.md).
 
 Document creation accepts an optional `format` field. Omitting it and explicitly sending `PLAIN_TEXT_V1` have the same meaning and idempotency behavior. With the gate enabled, `RICH_TEXT_V1` creates an initialized rich-text document; unknown or disabled formats return 400. Reusing an idempotency key with a different format returns 409.
 

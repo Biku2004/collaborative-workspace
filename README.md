@@ -1,6 +1,6 @@
 # Collaborative Workspace — learning and implementation plan
 
-Prepared 29 October 2026. Status: Lessons 1–26 are implemented and verified locally. Stored users can log in, manage workspace membership, and create, read, list, rename and archive authorized workspace documents. A bounded plain-text collaboration prototype supports locally persisted drafts and automatic reconnection. Lesson 27's rich-text path is implemented behind a default-off local feature gate, but remains in progress while its security and history limits are reviewed.
+Status: Lessons 1–27 are implemented and verified as local learning milestones. Stored users can log in, manage workspace membership, and create, read, list, rename and archive authorized workspace documents. A bounded collaboration prototype supports locally persisted drafts and automatic reconnection. Lesson 27's rich-text path remains behind a default-off feature gate because its security and history limits are unresolved; it is not production-ready.
 
 We will assume no prior experience with Spring and explain Java concepts whenever they are needed. We will implement one feature per lesson and verify it before moving on. The goal is a project you can build, debug, and defend in an interview.
 

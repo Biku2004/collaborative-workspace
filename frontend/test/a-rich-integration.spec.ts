@@ -89,6 +89,7 @@ test('rich editors synchronize, recover offline edits, and enforce viewer writes
     await expect(a.locator('.editor-status')).toContainText(/Offline|Saved locally/);
     await expect(b.locator('.editor-status')).toContainText(/Offline|Saved locally/);
     await editorA.press('Control+A'); await a.getByRole('button', { name: 'Italic', exact: true }).click();
+    await editorB.press('Control+A'); await b.getByRole('button', { name: 'Bold', exact: true }).click();
     await editorB.focus(); await editorB.press('Control+End'); await editorB.pressSequentially('!');
     await expect(a.locator('.editor-status')).toHaveText('Saved locally; pending server confirmation');
     await expect(b.locator('.editor-status')).toHaveText('Saved locally; pending server confirmation');
@@ -97,12 +98,15 @@ test('rich editors synchronize, recover offline edits, and enforce viewer writes
     await expect(editorB).toHaveText('Hello!', { timeout: 20000 });
     await expect(editorA.locator('em')).toContainText('Hello');
     await expect(editorB.locator('em')).toContainText('Hello');
+    await expect(editorA.locator('strong')).toHaveCount(0);
+    await expect(editorB.locator('strong')).toHaveCount(0);
     await expect(a.locator('.editor-status')).toHaveText(/Saved|Up to date/, { timeout: 20000 });
     await expect(b.locator('.editor-status')).toHaveText(/Saved|Up to date/, { timeout: 20000 });
     await Promise.all([a.reload(), b.reload()]);
     await Promise.all([select(a), select(b)]);
     await expect(editorA).toHaveText('Hello!'); await expect(editorB.locator('h2')).toHaveText('Hello!');
     await expect(editorB.locator('em')).toContainText('Hello');
+    await expect(editorB.locator('strong')).toHaveCount(0);
 
     const csrf = await (await alice.request.get('/api/csrf')).json() as { token: string; headerName: string };
     const workspace = process.env.WORKSPACE_E2E_SHARED_WORKSPACE!;

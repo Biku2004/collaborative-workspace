@@ -42,7 +42,8 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 - [x] **Lesson 24 — Plain-text collaborative editor.** See [Lesson 24](lessons/24-plain-text-collaborative-editor.md). Two independent browser contexts converge through the server.
 - [x] **Lesson 25 — Offline persistence and a pending queue.** See [Lesson 25](lessons/25-offline-persistence.md). Browser-stored drafts and stable retry IDs are tested; browser storage is not a server durability guarantee.
 - [x] **Lesson 26 — Reconnect and reconcile.** See [Lesson 26](lessons/26-reconnect-and-reconcile.md). Automatic reconnect rechecks identity and authorization, replays gaps and retains rejected local work.
-- [ ] Add the required TipTap rich-text editor, followed by collaborator presence.
+- [x] **Lesson 27 — Rich-text editor.** See [Lesson 27](lessons/27-rich-text-design.md). The local learning criteria are verified; the feature remains gated with unresolved security and history limits.
+- [ ] **Lesson 28 — Collaborator presence.**
 - [ ] Add checkpoints, named revisions and safe restore in separate lessons.
 - [ ] Add search, monitoring, multi-instance communication and failure testing as separate milestones.
 

@@ -8,11 +8,14 @@ class DocumentServiceTest {
     @Test void validatesTitle() {
         try (var factory = Validation.buildDefaultValidatorFactory()) {
             var validator = factory.getValidator();
-            assertTrue(validator.validate(new CreateDocumentRequest("A title")).isEmpty());
-            assertFalse(validator.validate(new CreateDocumentRequest(" ")).isEmpty());
-            assertFalse(validator.validate(new CreateDocumentRequest(null)).isEmpty());
-            assertFalse(validator.validate(new CreateDocumentRequest("x".repeat(201))).isEmpty());
-            assertFalse(validator.validate(new CreateDocumentRequest("text\0bad")).isEmpty());
+            assertTrue(validator.validate(new CreateDocumentRequest("A title", null)).isEmpty());
+            assertTrue(validator.validate(new CreateDocumentRequest("A title", "PLAIN_TEXT_V1")).isEmpty());
+            assertTrue(validator.validate(new CreateDocumentRequest("A title", "RICH_TEXT_V1")).isEmpty());
+            assertFalse(validator.validate(new CreateDocumentRequest("A title", "RICH_TEXT_V2")).isEmpty());
+            assertFalse(validator.validate(new CreateDocumentRequest(" ", null)).isEmpty());
+            assertFalse(validator.validate(new CreateDocumentRequest(null, null)).isEmpty());
+            assertFalse(validator.validate(new CreateDocumentRequest("x".repeat(201), null)).isEmpty());
+            assertFalse(validator.validate(new CreateDocumentRequest("text\0bad", null)).isEmpty());
         }
     }
 }

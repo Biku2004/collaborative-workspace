@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ApiError, currentUser, documentPage, login, logout, workspacePage, type CurrentUser, type Document, type Workspace } from './api';
+import { ApiError, createRichDocument, currentUser, documentPage, login, logout, workspacePage, type CurrentUser, type Document, type Workspace } from './api';
 import Editor from './Editor';
 import { clearOfflineContext, readOfflineContext, saveOfflineContext, type OfflineContext } from './offlineContext';
 
@@ -27,6 +27,10 @@ export default function App() {
   const [documentCursor, setDocumentCursor] = useState<string | null>(null);
   const [documentError, setDocumentError] = useState('');
   const [documentLoading, setDocumentLoading] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const createAttempt = useRef<{ workspace: string; title: string; key: string } | null>(null);
   const workspaceGeneration = useRef(0);
   const documentGeneration = useRef(0);
 
@@ -76,7 +80,8 @@ export default function App() {
     setDocumentLoading(true);
     documentPage(selected.id).then(page => {
       if (generation !== documentGeneration.current) return;
-      setDocuments(page.items); setDocumentCursor(page.nextCursor);
+      setDocuments(old => [...old, ...page.items.filter(item => !old.some(existing => existing.id === item.id))]);
+      setDocumentCursor(page.nextCursor);
     }).catch(error => {
       if (generation === documentGeneration.current) handleFailure(error, setDocumentError);
     }).finally(() => { if (generation === documentGeneration.current) setDocumentLoading(false); });
@@ -133,9 +138,35 @@ export default function App() {
     setDocumentLoading(true); setDocumentError('');
     try {
       const page = await documentPage(selected.id, documentCursor);
-      if (generation === documentGeneration.current) { setDocuments(old => [...old, ...page.items]); setDocumentCursor(page.nextCursor); }
+      if (generation === documentGeneration.current) {
+        setDocuments(old => [...old, ...page.items.filter(item => !old.some(existing => existing.id === item.id))]);
+        setDocumentCursor(page.nextCursor);
+      }
     } catch (error) { if (generation === documentGeneration.current) handleFailure(error, setDocumentError); }
     finally { if (generation === documentGeneration.current) setDocumentLoading(false); }
+  }
+
+  async function createDocument(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected || selected.role === 'VIEWER' || creating) return;
+    const title = newTitle.trim();
+    if (!title) return;
+    const workspace = selected.id, generation = documentGeneration.current;
+    if (!createAttempt.current || createAttempt.current.workspace !== workspace || createAttempt.current.title !== title)
+      createAttempt.current = { workspace, title, key: crypto.randomUUID() };
+    setCreating(true); setCreateError('');
+    try {
+      const document = await createRichDocument(workspace, title, createAttempt.current.key);
+      createAttempt.current = null;
+      if (generation !== documentGeneration.current) return;
+      setNewTitle('');
+      setDocuments(old => [document, ...old.filter(item => item.id !== document.id)]);
+    } catch (error) {
+      if (generation === documentGeneration.current) {
+        if (error instanceof ApiError && error.status === 400) setCreateError('Could not create the document. Check its title and whether rich text is enabled on the server.');
+        else handleFailure(error, setCreateError);
+      }
+    } finally { setCreating(false); }
   }
 
   if (user === undefined) return <main className="center"><p role="status">Checking your session…</p></main>;
@@ -172,14 +203,20 @@ export default function App() {
         <ul className="workspace-list">{workspaces.map(workspace => <li key={workspace.id}><button type="button" disabled={offline} className={selected?.id === workspace.id ? 'workspace-button selected' : 'workspace-button'} aria-pressed={selected?.id === workspace.id} onClick={() => selectWorkspace(workspace)}><span className="workspace-icon" aria-hidden="true">{workspace.name.slice(0, 1).toUpperCase()}</span><span className="workspace-copy"><strong>{workspace.name}</strong><small>{workspace.role.toLowerCase()}</small></span><span aria-hidden="true">↗</span></button></li>)}</ul>
         {workspaceCursor && <button className="more" disabled={workspaceLoading} type="button" onClick={moreWorkspaces}>{workspaceLoading ? 'Loading…' : 'Load more workspaces'} <span aria-hidden="true">→</span></button>}
       </section>
-      {openDocument && selected && user.id ? <Editor userId={user.id} workspaceId={selected.id} documentId={openDocument.id} title={openDocument.title} readOnly={selected.role === 'VIEWER'} onDirty={setEditorDirty} onBack={closeDocument} /> : <section className="documents" aria-labelledby="documents-heading"><div className="section-title"><div><p className="eyebrow">{selected ? selected.name : 'SELECT A WORKSPACE'}</p><h2 id="documents-heading">Documents</h2></div><span>02</span></div>
+      {openDocument && selected && user.id && (openDocument.collaborationFormat === 'PLAIN_TEXT_V1' || openDocument.collaborationFormat === 'RICH_TEXT_V1') ? <Editor userId={user.id} workspaceId={selected.id} documentId={openDocument.id} title={openDocument.title} format={openDocument.collaborationFormat} readOnly={selected.role === 'VIEWER'} onDirty={setEditorDirty} onBack={closeDocument} /> : <section className="documents" aria-labelledby="documents-heading"><div className="section-title"><div><p className="eyebrow">{selected ? selected.name : 'SELECT A WORKSPACE'}</p><h2 id="documents-heading">Documents</h2></div><span>02</span></div>
         {!selected && <div className="empty-state"><span className="empty-symbol" aria-hidden="true">✳</span><h3>Nothing selected yet.</h3><p>Choose a workspace on the left to browse its documents.</p></div>}
         {selected && <>
+          {!offline && selected.role !== 'VIEWER' && <form className="create-document" onSubmit={createDocument}>
+            <label htmlFor="new-document-title">New rich-text document</label>
+            <div><input id="new-document-title" value={newTitle} onChange={event => setNewTitle(event.target.value)} maxLength={200} required />
+              <button type="submit" disabled={creating}>{creating ? 'Creating…' : 'Create document'}</button></div>
+            {createError && <p className="alert" role="alert">{createError}</p>}
+          </form>}
           <div className="list-heading"><span>DOCUMENT NAME</span><span>CREATED</span></div>
           {documentError && <p className="alert" role="alert">{documentError}</p>}
           {documentLoading && documents.length === 0 && <p className="muted" role="status">Loading documents…</p>}
           {!documentLoading && !documentError && documents.length === 0 && <div className="empty-state compact"><span className="empty-symbol" aria-hidden="true">◇</span><h3>No documents yet.</h3><p>Documents shared in this workspace will appear here.</p></div>}
-          <ul className="document-list">{documents.map(document => <li key={document.id}><button type="button" className="document-button" onClick={() => { if (document.collaborationFormat !== 'PLAIN_TEXT_V1') { setDocumentError('This document format is not supported by this editor.'); return; } if (user.id) saveOfflineContext({ user: { username: user.username, id: user.id }, workspace: selected, document }); setOpenDocument(document); }}><span className="document-icon" aria-hidden="true">▤</span><span className="document-name"><strong>{document.title}</strong><small>Open document</small></span><time dateTime={document.createdAt}>{new Date(document.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</time></button></li>)}</ul>
+          <ul className="document-list">{documents.map(document => <li key={document.id}><button type="button" className="document-button" onClick={() => { if (document.collaborationFormat !== 'PLAIN_TEXT_V1' && document.collaborationFormat !== 'RICH_TEXT_V1') { setDocumentError('This document format is not supported by this editor.'); return; } if (user.id) saveOfflineContext({ user: { username: user.username, id: user.id }, workspace: selected, document }); setOpenDocument(document); }}><span className="document-icon" aria-hidden="true">▤</span><span className="document-name"><strong>{document.title}</strong><small>Open document</small></span><time dateTime={document.createdAt}>{new Date(document.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</time></button></li>)}</ul>
           {documentCursor && <button className="more" disabled={documentLoading} type="button" onClick={moreDocuments}>{documentLoading ? 'Loading…' : 'Load more documents'} <span aria-hidden="true">→</span></button>}
         </>}
       </section>}{dirty && <span className="sr-only">Unsaved changes</span>}</div>

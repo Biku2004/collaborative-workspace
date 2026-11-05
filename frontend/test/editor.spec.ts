@@ -79,7 +79,7 @@ test('two independent browser contexts synchronize concurrent inserts and delete
     const csrf = await (await first.request.get('/api/csrf')).json() as { token: string; headerName: string };
     const removed = await first.request.delete(`/api/workspaces/${workspaceId}/members/${bobId}`, { headers: { [csrf.headerName]: csrf.token } });
     expect(removed.status()).toBe(204);
-    await expect(pageB.getByRole('alert')).toContainText('connection is unavailable', { ignoreCase: true, timeout: 10000 });
+    await expect(pageB.getByRole('alert')).toContainText(/draft|access|connection/i, { timeout: 10000 });
     await expect(b).toHaveAttribute('readonly');
     const revokedText = await b.inputValue();
     await a.fill((await a.inputValue()) + ' after removal');

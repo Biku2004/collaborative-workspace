@@ -14,8 +14,12 @@ public class DocumentRepository {
     public DocumentRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     public Document create(UUID id, UUID workspaceId, String title) {
-        return jdbc.queryForObject("INSERT INTO documents (id, workspace_id, title) VALUES (?, ?, ?) RETURNING id, workspace_id, title, created_at, version, archived, collaboration_format",
-            this::mapDocument, id, workspaceId, title);
+        return create(id, workspaceId, title, "PLAIN_TEXT_V1");
+    }
+
+    public Document create(UUID id, UUID workspaceId, String title, String format) {
+        return jdbc.queryForObject("INSERT INTO documents (id, workspace_id, title, collaboration_format) VALUES (?, ?, ?, ?) RETURNING id, workspace_id, title, created_at, version, archived, collaboration_format",
+            this::mapDocument, id, workspaceId, title, format);
     }
 
     public Optional<Document> findVisible(UUID id, UUID userId) {

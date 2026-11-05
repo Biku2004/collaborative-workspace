@@ -63,6 +63,7 @@ class BrowserWorkspaceIntegrationTest {
             registry.add("workspace.yjs-engine-url", () -> "http://127.0.0.1:" + enginePort);
             registry.add("workspace.delivery.enabled", () -> "true");
             registry.add("workspace.delivery.poll-ms", () -> "100");
+            registry.add("workspace.rich.enabled", () -> "true");
         } else registry.add("workspace.delivery.enabled", () -> "false");
         registry.add("spring.datasource.url", () -> database);
         registry.add("spring.datasource.username", () -> System.getenv("WORKSPACE_TEST_DB_USER"));
@@ -109,7 +110,7 @@ class BrowserWorkspaceIntegrationTest {
                 Thread.sleep(50);
             }
             assertTrue(ready, () -> "Vite failed to start:\n" + safeRead(viteLog));
-            var runner = new ProcessBuilder("node", "node_modules/@playwright/test/cli.js", "test", "a-reconnect.spec.ts", "workspace.spec.ts", "editor.spec.ts", "local-document-store.spec.ts", "partial-sync.spec.ts", "--reporter=line")
+            var runner = new ProcessBuilder("node", "node_modules/@playwright/test/cli.js", "test", "a-reconnect.spec.ts", "a-rich-integration.spec.ts", "workspace.spec.ts", "editor.spec.ts", "local-document-store.spec.ts", "partial-sync.spec.ts", "rich-surface.spec.ts", "--reporter=line")
                     .directory(frontend.toFile()).redirectErrorStream(true).redirectOutput(browserLog.toFile());
             var env = runner.environment();
             env.put("WORKSPACE_E2E_ORIGIN", "http://127.0.0.1:" + frontendPort);
@@ -122,8 +123,9 @@ class BrowserWorkspaceIntegrationTest {
             Path chrome = Path.of("C:/Program Files/Google/Chrome/Application/chrome.exe");
             if (Files.isRegularFile(chrome)) env.putIfAbsent("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", chrome.toString());
             browser = runner.start();
-            assertTrue(browser.waitFor(60, TimeUnit.SECONDS), "Browser verification timed out");
+            assertTrue(browser.waitFor(120, TimeUnit.SECONDS), "Browser verification timed out");
             assertEquals(0, browser.exitValue(), () -> "Browser verification failed:\n" + safeRead(browserLog));
+            safeRead(browserLog).lines().filter(line -> line.startsWith("STRUCTURAL_EDIT_MEASUREMENT ")).forEach(System.out::println);
             if (engine != null) {
                 // The preceding revocation scenario removes Bob; restore him for account-isolation coverage.
                 membership.setRole(sharedWorkspace, alice, new ChangeWorkspaceMemberRequest(bob, WorkspaceRole.EDITOR));

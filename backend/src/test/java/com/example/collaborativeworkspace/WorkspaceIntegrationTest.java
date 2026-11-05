@@ -509,6 +509,18 @@ class WorkspaceIntegrationTest {
             assertEquals(first.join().body(), second.join().body());
             assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM workspaces WHERE created_by = ?", Integer.class, actor));
             UUID workspace = UUID.fromString(field(first.join().body(), "id"));
+            var unsupportedFormat = post(session, base + "/api/workspaces/" + workspace + "/documents", "{\"title\":\"Rich\",\"format\":\"RICH_TEXT_V1\"}", csrf);
+            assertEquals(400, unsupportedFormat.statusCode());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM documents WHERE workspace_id = ?", Integer.class, workspace));
+            var explicitPlain = HttpRequest.newBuilder(URI.create(base + "/api/workspaces/" + workspace + "/documents"))
+                    .header("Content-Type", "application/json").header("X-CSRF-TOKEN", csrf).header("Idempotency-Key", "format-retry")
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"title\":\"Plain\",\"format\":\"PLAIN_TEXT_V1\"}")).build();
+            var implicitPlain = HttpRequest.newBuilder(URI.create(base + "/api/workspaces/" + workspace + "/documents"))
+                    .header("Content-Type", "application/json").header("X-CSRF-TOKEN", csrf).header("Idempotency-Key", "format-retry")
+                    .POST(HttpRequest.BodyPublishers.ofString("{\"title\":\"Plain\"}")).build();
+            var explicitResponse = session.send(explicitPlain, HttpResponse.BodyHandlers.ofString());
+            var implicitResponse = session.send(implicitPlain, HttpResponse.BodyHandlers.ofString());
+            assertEquals(201, explicitResponse.statusCode()); assertEquals(explicitResponse.body(), implicitResponse.body());
             var conflictRequest = HttpRequest.newBuilder(URI.create(base + "/api/workspaces"))
                     .header("Content-Type", "application/json").header("X-CSRF-TOKEN", csrf).header("Idempotency-Key", "same-request")
                     .POST(HttpRequest.BodyPublishers.ofString("{\"name\":\"Different\"}")).build();
@@ -520,13 +532,13 @@ class WorkspaceIntegrationTest {
             Document original = documentService.create(workspace, editor, "Notes", "doc-retry");
             assertEquals("PLAIN_TEXT_V1", original.collaborationFormat());
             // A response persisted by an older application has no format property.
-            jdbc.update("UPDATE creation_requests SET response_json=(response_json::jsonb - 'collaborationFormat')::text WHERE user_id=? AND request_key=?", editorId, "doc-retry");
+            jdbc.update("UPDATE creation_requests SET response_json=(response_json::jsonb - 'collaborationFormat')::text, request_variant=NULL WHERE user_id=? AND request_key=?", editorId, "doc-retry");
             Document replay = documentService.create(workspace, editor, "Notes", "doc-retry");
             assertEquals(original, replay); // Simulates retry after the original response was lost.
             var retryOne = java.util.concurrent.CompletableFuture.supplyAsync(() -> documentService.create(workspace, editor, "Concurrent", "concurrent-doc"));
             var retryTwo = java.util.concurrent.CompletableFuture.supplyAsync(() -> documentService.create(workspace, editor, "Concurrent", "concurrent-doc"));
             assertEquals(retryOne.get(5, java.util.concurrent.TimeUnit.SECONDS), retryTwo.get(5, java.util.concurrent.TimeUnit.SECONDS));
-            assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM documents WHERE workspace_id = ?", Integer.class, workspace));
+            assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM documents WHERE workspace_id = ?", Integer.class, workspace));
             assertThrows(IdempotencyConflictException.class, () -> documentService.create(workspace, editor, "Different", "doc-retry"));
             membership.remove(workspace, email, editorId);
             assertThrows(WorkspaceResourceNotFoundException.class, () -> documentService.create(workspace, editor, "Notes", "doc-retry"));

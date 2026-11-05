@@ -21,12 +21,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/workspaces/{workspaceId}/documents")
 public class WorkspaceDocumentController {
     private final DocumentService service;
-    public WorkspaceDocumentController(DocumentService service) { this.service = service; }
+    private final CollaborationFormatPolicy formats;
+    public WorkspaceDocumentController(DocumentService service, CollaborationFormatPolicy formats) { this.service = service; this.formats = formats; }
 
     @PostMapping
     public ResponseEntity<Document> create(@PathVariable UUID workspaceId, @Valid @RequestBody CreateDocumentRequest request, Authentication authentication,
             @org.springframework.web.bind.annotation.RequestHeader(name = "Idempotency-Key", required = false) String requestKey) {
-        Document document = service.create(workspaceId, authentication.getName(), request.title(), requestKey);
+        String format = request.format() == null ? "PLAIN_TEXT_V1" : request.format();
+        if (!formats.supports(format)) throw new InvalidUserInputException();
+        Document document = service.create(workspaceId, authentication.getName(), request.title(), requestKey, format);
         return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).body(document);
     }
 

@@ -42,6 +42,7 @@ class DocumentUpdateEndToEndTest {
     @LocalServerPort int port;
     @Autowired UserRepository users;
     @Autowired WorkspaceService workspaces;
+    @Autowired WorkspaceMembershipService membership;
     @Autowired DocumentService documents;
     @Autowired PasswordEncoder encoder;
     @Autowired JdbcTemplate jdbc;
@@ -70,10 +71,66 @@ class DocumentUpdateEndToEndTest {
         registry.add("workspace.yjs-engine-url", () -> "http://127.0.0.1:" + enginePort);
         registry.add("workspace.websocket.allowed-origin", () -> "http://127.0.0.1:5173");
         registry.add("workspace.delivery.poll-ms", () -> "100");
+        registry.add("workspace.rich.enabled", () -> "true");
         registry.add("spring.datasource.url", () -> database);
         registry.add("spring.datasource.username", () -> System.getenv("WORKSPACE_TEST_DB_USER"));
         registry.add("spring.datasource.password", () -> System.getenv("WORKSPACE_TEST_DB_PASSWORD"));
         registry.add("workspace.dev.password", () -> "test-only-password");
+    }
+
+    @Test void richDocumentNegotiatesReplaysAndCommitsThroughTheRealEngine() throws Exception {
+        UUID ownerId = UUID.randomUUID(), viewerId = UUID.randomUUID(), workspace = null;
+        String owner = "rich-e2e-" + ownerId + "@example.com", viewer = "rich-view-" + viewerId + "@example.com";
+        String base = "http://127.0.0.1:" + port;
+        WebSocket socket = null, viewerSocket = null;
+        try {
+            users.create(ownerId, owner, encoder.encode("test-user-password"));
+            users.create(viewerId, viewer, encoder.encode("test-user-password"));
+            workspace = workspaces.create(owner, "rich engine").id();
+            membership.setRole(workspace, owner, new ChangeWorkspaceMemberRequest(viewer, WorkspaceRole.VIEWER));
+            UUID document = documents.create(workspace, owner, "Rich notes", "rich-e2e", "RICH_TEXT_V1").id();
+            var fixture = new Properties();
+            try (var reader = java.nio.file.Files.newBufferedReader(Path.of("..", "experiments", "yjs-private-engine", "fixtures", "rich-dependent.properties"))) { fixture.load(reader); }
+            var client = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
+            login(client, base, owner);
+            var listener = new Listener();
+            socket = client.newWebSocketBuilder().header("Origin", "http://127.0.0.1:5173")
+                    .buildAsync(URI.create("ws://127.0.0.1:" + port + "/api/workspaces/" + workspace + "/socket"), listener).join();
+            socket.sendText("{\"type\":\"HELLO\",\"version\":1}", true).join(); listener.next("WELCOME");
+            socket.sendText("{\"type\":\"JOIN\",\"version\":1,\"documentId\":\"" + document + "\"}", true).join();
+            assertTrue(listener.next("REJECTED").contains("SCHEMA_UNSUPPORTED"));
+            socket.sendText("{\"type\":\"JOIN\",\"version\":1,\"documentId\":\"" + document + "\",\"format\":\"RICH_TEXT_V1\"}", true).join();
+            assertTrue(listener.next("JOINED").contains("RICH_TEXT_V1"));
+            socket.sendText("{\"type\":\"SYNC\",\"version\":1,\"epoch\":0,\"after\":0}", true).join();
+            var initial = json.readTree(listener.next("SYNC_PAGE"));
+            assertEquals(1, initial.path("updates").size());
+            assertEquals(fixture.getProperty("initial"), initial.path("updates").get(0).path("payload").asText());
+            UUID updateId = UUID.randomUUID();
+            String request = "{\"type\":\"SUBMIT_UPDATE\",\"version\":1,\"epoch\":0,\"updateId\":\"" + updateId + "\",\"payload\":\"" + fixture.getProperty("update") + "\"}";
+            socket.sendText(request, true).join();
+            String saved = listener.next("SAVED");
+            assertTrue(saved.contains(updateId.toString())); assertTrue(saved.contains("\"sequence\":2"));
+            assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM document_updates WHERE document_id=?", Integer.class, document));
+            byte[] checkpoint = jdbc.queryForObject("SELECT checkpoint FROM document_streams WHERE document_id=?", byte[].class, document);
+            assertTrue(engineClient.reconstructRich(java.util.List.of(checkpoint)).initialized());
+            socket.sendText(request, true).join();
+            assertTrue(listener.next("SAVED").contains("\"duplicate\":true"));
+            var viewerClient = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
+            login(viewerClient, base, viewer);
+            var viewerListener = new Listener();
+            viewerSocket = viewerClient.newWebSocketBuilder().header("Origin", "http://127.0.0.1:5173")
+                    .buildAsync(URI.create("ws://127.0.0.1:" + port + "/api/workspaces/" + workspace + "/socket"), viewerListener).join();
+            viewerSocket.sendText("{\"type\":\"HELLO\",\"version\":1}", true).join(); viewerListener.next("WELCOME");
+            viewerSocket.sendText("{\"type\":\"JOIN\",\"version\":1,\"documentId\":\"" + document + "\",\"format\":\"RICH_TEXT_V1\"}", true).join(); viewerListener.next("JOINED");
+            viewerSocket.sendText(request.replace(updateId.toString(), UUID.randomUUID().toString()), true).join();
+            assertTrue(viewerListener.next("REJECTED").contains("ACCESS_DENIED"));
+            assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM document_updates WHERE document_id=?", Integer.class, document));
+        } finally {
+            if (socket != null) socket.abort();
+            if (viewerSocket != null) viewerSocket.abort();
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id IN (?, ?)", ownerId, viewerId);
+        }
     }
     @AfterAll static void stopEngine() throws Exception {
         if (engine != null) { engine.destroy(); if (!engine.waitFor(5, TimeUnit.SECONDS)) engine.destroyForcibly(); }

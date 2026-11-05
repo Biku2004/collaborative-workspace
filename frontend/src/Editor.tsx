@@ -1,25 +1,29 @@
-import { useEffect, useRef, useState } from 'react';
-import { PlainTextProvider, type EditorState } from './provider';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { DocumentProvider, type CollaborationFormat, type EditorState } from './provider';
+import RichEditorBoundary from './RichEditorBoundary';
+const RichTextSurface = lazy(() => import('./RichTextSurface'));
 
-type Props = { userId: string; workspaceId: string; documentId: string; title: string; readOnly: boolean; onDirty: (dirty: boolean) => void; onBack: () => void };
-const initial: EditorState = { phase: 'connecting', text: '', pending: 0, message: 'Connecting…' };
+type Props = { userId: string; workspaceId: string; documentId: string; title: string; format: CollaborationFormat; readOnly: boolean; onDirty: (dirty: boolean) => void; onBack: () => void };
+const initial: EditorState = { phase: 'connecting', text: '', pending: 0, message: 'Connecting…', hasLocalState: false };
 
-export default function Editor({ userId, workspaceId, documentId, title, readOnly, onDirty, onBack }: Props) {
+export default function Editor({ userId, workspaceId, documentId, title, format, readOnly, onDirty, onBack }: Props) {
   const [state, setState] = useState<EditorState>(initial);
-  const provider = useRef<PlainTextProvider | null>(null);
+  const [canRenderRich, setCanRenderRich] = useState(false);
+  const provider = useRef<DocumentProvider | null>(null);
   const dirty = state.pending > 0;
   const dirtyCallback = useRef(onDirty);
   dirtyCallback.current = onDirty;
 
   useEffect(() => {
-    setState(initial);
-    const instance = new PlainTextProvider(userId, workspaceId, documentId, next => {
+    setState(initial); setCanRenderRich(false);
+    const instance = new DocumentProvider(userId, workspaceId, documentId, next => {
       dirtyCallback.current(next.pending > 0);
       setState(next);
-    });
+      if (next.phase === 'ready' || next.hasLocalState) setCanRenderRich(true);
+    }, format);
     provider.current = instance;
     return () => { provider.current = null; instance.destroy(); dirtyCallback.current(false); };
-  }, [userId, workspaceId, documentId]);
+  }, [userId, workspaceId, documentId, format]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -30,15 +34,17 @@ export default function Editor({ userId, workspaceId, documentId, title, readOnl
 
   return <section className="editor" aria-labelledby="editor-title">
     <button className="more" type="button" onClick={onBack}>← Back to documents</button>
-    <div className="editor-heading"><div><p className="eyebrow">DOCUMENT / PLAIN TEXT</p><h2 id="editor-title">{title}</h2></div>
+    <div className="editor-heading"><div><p className="eyebrow">DOCUMENT / {format === 'RICH_TEXT_V1' ? 'RICH TEXT' : 'PLAIN TEXT'}</p><h2 id="editor-title">{title}</h2></div>
       <span className={state.phase === 'failed' ? 'editor-status error' : 'editor-status'} role="status">{state.message}</span></div>
-    {state.phase === 'failed' && <p className="alert" role="alert">The connection is unavailable or access was denied. Copy your draft if needed; browser storage can be cleared or evicted.</p>}
+    {state.phase === 'failed' && <p className="alert" role="alert">{state.message} Browser storage can be cleared or evicted.</p>}
     {state.phase === 'offline' && <p className="alert" role="status">The service is unavailable or access could not be verified. Local changes remain on this device until the server accepts them. Browser storage can be cleared or evicted.</p>}
     {state.phase === 'waiting' && <p className="alert" role="status">A complete local copy is not available yet. The editor will retry the connection before enabling editing.</p>}
     {readOnly && <p className="muted small">You can view this document. An editor or owner can make changes.</p>}
-    <label htmlFor="editor-content" className="editor-label">Document text</label>
-    <textarea id="editor-content" value={state.text} readOnly={readOnly || (state.phase !== 'ready' && state.phase !== 'offline')}
-      onChange={event => provider.current?.setText(event.target.value)} aria-describedby="editor-help" />
+    {format === 'RICH_TEXT_V1' ? (canRenderRich && provider.current && <RichEditorBoundary><Suspense fallback={<p role="status">Loading editor…</p>}><RichTextSurface document={provider.current.sharedDocument}
+      readOnly={readOnly || (state.phase !== 'ready' && state.phase !== 'offline')} /></Suspense></RichEditorBoundary>) : <>
+      <label htmlFor="editor-content" className="editor-label">Document text</label>
+      <textarea id="editor-content" value={state.text} readOnly={readOnly || (state.phase !== 'ready' && state.phase !== 'offline')}
+        onChange={event => provider.current?.setText(event.target.value)} aria-describedby="editor-help" /></>}
     <p id="editor-help" className="muted small">Local changes are not saved on the server until confirmed. Browser storage is not private from other users of this browser profile.</p>
   </section>;
 }

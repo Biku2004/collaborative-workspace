@@ -1,5 +1,66 @@
 import { expect, test } from '@playwright/test';
 
+test('rich formatting and offline edits survive an offline reload and reconnect', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL });
+  try {
+    await context.addInitScript(() => {
+      const original = WebSocket.prototype.send;
+      let socket: WebSocket | undefined;
+      (window as unknown as Window & { closeRichSocket: () => void }).closeRichSocket = () => socket?.close();
+      WebSocket.prototype.send = function (data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+        if (this.url.includes('/socket')) socket = this;
+        original.call(this, data);
+      };
+    });
+    const page = await context.newPage();
+    await page.goto('/');
+    await page.getByLabel('Email').fill(process.env.WORKSPACE_E2E_ALICE!);
+    await page.getByLabel('Password').fill('browser-test-password');
+    await page.getByRole('button', { name: /Continue/ }).click();
+    await page.getByRole('button', { name: new RegExp(process.env.WORKSPACE_E2E_SHARED_NAME!) }).click();
+    await page.getByRole('button', { name: /Rich notes/ }).click();
+    const editor = page.getByRole('textbox', { name: 'Document text' });
+    await expect(editor.locator('h2')).toHaveText('Hello!', { timeout: 15000 });
+    await expect(editor.locator('em')).toContainText('Hello');
+    await expect(page.locator('.editor-status')).toHaveText(/Saved|Up to date/, { timeout: 15000 });
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await context.setOffline(true);
+    await page.evaluate(() => (window as unknown as Window & { closeRichSocket: () => void }).closeRichSocket());
+    await expect(page.locator('.editor-status')).toContainText(/Offline|Saved locally/);
+    await editor.focus(); await editor.press('Control+End'); await editor.pressSequentially(' offline');
+    await expect(page.locator('.editor-status')).toHaveText('Saved locally; pending server confirmation');
+    page.once('dialog', dialog => void dialog.accept());
+    await page.reload();
+    await page.getByRole('button', { name: 'Open last local document' }).click();
+    await expect(editor.locator('h2')).toHaveText('Hello! offline');
+    await expect(editor.locator('em')).toContainText('Hello');
+    await editor.focus(); await editor.press('Control+End'); await editor.pressSequentially(' again');
+    await expect(page.locator('.editor-status')).toHaveText('Saved locally; pending server confirmation');
+    await context.setOffline(false);
+    page.once('dialog', dialog => void dialog.accept());
+    await page.reload();
+    await page.getByRole('button', { name: new RegExp(process.env.WORKSPACE_E2E_SHARED_NAME!) }).click();
+    await page.getByRole('button', { name: /Rich notes/ }).click();
+    await expect(editor.locator('h2')).toHaveText('Hello! offline again', { timeout: 15000 });
+    await expect(editor.locator('em')).toContainText('Hello');
+    await expect(page.locator('.editor-status')).toHaveText(/Saved|Up to date/, { timeout: 15000 });
+    // An independent browser has no local draft, so it proves the server committed the recovered edits.
+    const observer = await browser.newContext({ baseURL });
+    try {
+      const other = await observer.newPage();
+      await other.goto('/');
+      await other.getByLabel('Email').fill(process.env.WORKSPACE_E2E_ALICE!);
+      await other.getByLabel('Password').fill('browser-test-password');
+      await other.getByRole('button', { name: /Continue/ }).click();
+      await other.getByRole('button', { name: new RegExp(process.env.WORKSPACE_E2E_SHARED_NAME!) }).click();
+      await other.getByRole('button', { name: /Rich notes/ }).click();
+      const observed = other.getByRole('textbox', { name: 'Document text' });
+      await expect(observed.locator('h2')).toHaveText('Hello! offline again', { timeout: 15000 });
+      await expect(observed.locator('em')).toContainText('Hello');
+    } finally { await observer.close(); }
+  } finally { await context.close(); }
+});
+
 test('production shell restores offline edits and retries their stable IDs after authentication', async ({ browser, baseURL }) => {
   const email = process.env.WORKSPACE_E2E_ALICE!;
   const workspace = process.env.WORKSPACE_E2E_SHARED_NAME!;

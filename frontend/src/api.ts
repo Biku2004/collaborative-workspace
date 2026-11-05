@@ -54,3 +54,12 @@ export async function documentPage(workspaceId: string, cursor?: string): Promis
   const suffix = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
   return (await checked(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents${suffix}`)).json() as Promise<Page<Document>>;
 }
+
+export async function createRichDocument(workspaceId: string, title: string, requestKey: string): Promise<Document> {
+  const token = await csrf();
+  const response = await checked(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey, [token.headerName]: token.token },
+    body: JSON.stringify({ title, format: 'RICH_TEXT_V1' }),
+  });
+  return response.json() as Promise<Document>;
+}

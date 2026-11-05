@@ -13,9 +13,12 @@ public class DocumentService {
     private final WorkspaceRepository workspaces;
     private final UserRepository users;
     private final IdempotencyService idempotency;
-    public DocumentService(DocumentRepository repository, WorkspaceRepository workspaces, UserRepository users, IdempotencyService idempotency) {
+    private final DocumentUpdateRepository updates;
+    private final tools.jackson.databind.json.JsonMapper json;
+    public DocumentService(DocumentRepository repository, WorkspaceRepository workspaces, UserRepository users, IdempotencyService idempotency,
+            DocumentUpdateRepository updates, tools.jackson.databind.json.JsonMapper json) {
         this.repository = repository; this.workspaces = workspaces; this.users = users;
-        this.idempotency = idempotency;
+        this.idempotency = idempotency; this.updates = updates; this.json = json;
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -25,12 +28,31 @@ public class DocumentService {
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Document create(UUID workspaceId, String authenticatedEmail, String title, String requestKey) {
+        return create(workspaceId, authenticatedEmail, title, requestKey, "PLAIN_TEXT_V1");
+    }
+
+    /** Format-aware creation; the HTTP boundary applies the feature gate. */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Document create(UUID workspaceId, String authenticatedEmail, String title, String requestKey, String format) {
+        if (!"PLAIN_TEXT_V1".equals(format) && !"RICH_TEXT_V1".equals(format)) throw new InvalidUserInputException();
+        byte[] bootstrap = "RICH_TEXT_V1".equals(format) ? new RichTextContract(json).initialUpdate() : null;
         UUID userId = users.findIdByEmail(authenticatedEmail).orElseThrow(() -> new AccessDeniedException("User is not available"));
         if (!workspaces.lockWorkspace(workspaceId)) throw new WorkspaceResourceNotFoundException();
         WorkspaceRole role = workspaces.memberRole(workspaceId, userId).orElseThrow(WorkspaceResourceNotFoundException::new);
         if (role == WorkspaceRole.VIEWER) throw new AccessDeniedException("Editing permission required");
-        return idempotency.execute(userId, "document:" + workspaceId, requestKey, title.strip(), Document.class,
-                () -> repository.create(UUID.randomUUID(), workspaceId, title.strip()));
+        return idempotency.executeDocument(userId, "document:" + workspaceId, requestKey, title.strip(), format, Document.class, () -> {
+            Document document = repository.create(UUID.randomUUID(), workspaceId, title.strip(), format);
+            if (bootstrap != null) {
+                byte[] digest;
+                try { digest = java.security.MessageDigest.getInstance("SHA-256").digest(bootstrap); }
+                catch (java.security.NoSuchAlgorithmException ex) { throw new IllegalStateException("SHA-256 unavailable", ex); }
+                updates.ensureStream(document.id());
+                updates.saveUpdate(document.id(), 0, 1, UUID.randomUUID(), userId, bootstrap, digest);
+                updates.saveHead(document.id(), 0, 1, bootstrap);
+                updates.insertOutbox(document.id(), 0, 1);
+            }
+            return document;
+        });
     }
 
     @Transactional(readOnly = true)

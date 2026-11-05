@@ -43,4 +43,8 @@ The committed relay and replay contract is described in [Lesson 22](lessons/22-b
 
 The local browser login and list flow is described in [Lesson 23](lessons/23-minimal-browser-application.md).
 
-Lesson 27 is in progress: document metadata now includes `collaborationFormat`, currently always `PLAIN_TEXT_V1`. The migration labels existing documents without converting their history. Rich-text formats are not yet accepted.
+Lesson 27 is in progress: document metadata includes `collaborationFormat`. Existing documents remain `PLAIN_TEXT_V1`; migrations preserve their history. Rich-text creation, replay and writes require the `workspace.rich.enabled` gate, which is disabled by default.
+
+Document creation accepts an optional `format` field. Omitting it and explicitly sending `PLAIN_TEXT_V1` have the same meaning and idempotency behavior. With the gate enabled, `RICH_TEXT_V1` creates an initialized rich-text document; unknown or disabled formats return 400. Reusing an idempotency key with a different format returns 409.
+
+Socket `JOIN` accepts an optional `format` field. A join without it represents a legacy plain-text client; a matching join returns that format in `JOINED`. A mismatch or a disabled format receives `REJECTED` with `SCHEMA_UNSUPPORTED` before the socket joins a document room. The writer and replay services also enforce the format gate.

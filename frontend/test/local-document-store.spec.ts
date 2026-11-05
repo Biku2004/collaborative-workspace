@@ -23,13 +23,16 @@ test('local document writes are ordered, scoped, and protected from a second wri
     const secondUser = await LocalDocumentStore.open(other, workspace, document, 0);
     const otherData = await secondUser.load();
     await secondUser.close();
+    const rich = await LocalDocumentStore.open(user, workspace, document, 0, 'RICH_TEXT_V1');
+    const richData = await rich.load();
+    await rich.close();
     await first.close();
     const reopened = await LocalDocumentStore.open(user, workspace, document, 0);
     const restored = await reopened.load();
     await reopened.close();
-    return { competingBlocked, otherEmpty: otherData === undefined, captured: Array.from(captured?.state ?? []), state: Array.from(restored?.state ?? []), pending: restored?.pending };
+    return { competingBlocked, otherEmpty: otherData === undefined, richEmpty: richData === undefined, captured: Array.from(captured?.state ?? []), state: Array.from(restored?.state ?? []), pending: restored?.pending };
   });
-  expect(result).toEqual({ competingBlocked: true, otherEmpty: true, captured: [1], state: [2],
+  expect(result).toEqual({ competingBlocked: true, otherEmpty: true, richEmpty: true, captured: [1], state: [2],
     pending: [{ id: '40000000-0000-4000-8000-000000000001', payload: 'Ag==' }] });
 });
 

@@ -57,6 +57,11 @@ input { width: 100%; padding: 14px; border: 1px solid #dcded7; border-radius: 2p
 .workspace-copy strong { font-size: 13px; overflow-wrap: anywhere; }
 .workspace-copy small, .document-name small { color: #92a096; font-size: 11px; text-transform: capitalize; }
 .list-heading { margin-top: 40px; padding-bottom: 12px; border-bottom: 1px solid #e2e5dc; display: flex; justify-content: space-between; color: #9ca79e; font-size: 9px; font-weight: 700; letter-spacing: .14em; }
+.create-document { margin-top: 28px; display: grid; gap: 8px; }
+.create-document label { font-size: 12px; font-weight: 700; }
+.create-document div { display: flex; flex-wrap: wrap; gap: 8px; }
+.create-document input { flex: 1 1 180px; min-width: 0; padding: 10px; border: 1px solid #dce2d9; font: inherit; }
+.create-document button { padding: 10px 14px; border: 1px solid #476f55; background: #476f55; color: white; font: inherit; }
 .document-list li { display: flex; align-items: center; gap: 16px; min-height: 76px; border-bottom: 1px solid #eaebe5; }
 .document-button { width: 100%; min-height: 76px; display: flex; align-items: center; gap: 16px; padding: 8px 0; border: 0; background: transparent; color: inherit; text-align: left; }
 .document-button:hover { background: #f1f4ed; }
@@ -76,6 +81,12 @@ time { margin-left: auto; color: #8c9b90; font-size: 12px; white-space: nowrap; 
 .editor-status { color: #476f55; font-size: 12px; white-space: nowrap; }
 .editor-status.error { color: #893d36; }
 .editor-label { margin-top: 25px; }
+.rich-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0 10px; }
+.rich-toolbar button { border: 1px solid #dce2d9; background: #fff; color: #33483a; padding: 8px 10px; font: inherit; font-size: 12px; }
+.rich-toolbar button[aria-pressed="true"] { background: #dce9dc; border-color: #7d9b83; }
+.rich-toolbar button:disabled { opacity: .55; }
+.rich-editor .tiptap { min-height: 360px; padding: 20px; border: 1px solid #dce2d9; background: #fff; color: #262d29; line-height: 1.6; overflow-wrap: anywhere; }
+.rich-editor .tiptap:focus-visible { outline: 2px solid #476f55; outline-offset: 2px; }
 .editor textarea { width: 100%; min-height: 360px; resize: vertical; padding: 20px; border: 1px solid #dce2d9; background: #fff; color: #262d29; font: inherit; line-height: 1.7; }
 .editor textarea:focus-visible { outline: 3px solid #94bda3; outline-offset: 3px; }
 .editor textarea[readonly] { background: #f4f5f0; }

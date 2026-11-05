@@ -8,7 +8,7 @@ test('a first synchronization interrupted mid-replay is not an offline editing b
   await page.goto('/');
   await page.evaluate(async ({ user, workspace, document }) => {
     const path = '/src/provider.ts';
-    const { PlainTextProvider } = await import(/* @vite-ignore */ path) as typeof import('../src/provider');
+    const { DocumentProvider } = await import(/* @vite-ignore */ path) as typeof import('../src/provider');
     const hooks = window as unknown as Window & { phase: string; drop: () => void; requestedSecondPage: boolean };
     class FakeSocket {
       static readonly OPEN = 1;
@@ -24,7 +24,7 @@ test('a first synchronization interrupted mid-replay is not an offline editing b
         const message = JSON.parse(data) as { type: string; after?: number };
         if (message.type === 'SYNC' && message.after === 1) hooks.requestedSecondPage = true;
         const reply = message.type === 'HELLO' ? { type: 'WELCOME', version: 1, workspaceId: workspace, userId: user } :
-          message.type === 'JOIN' ? { type: 'JOINED', version: 1, documentId: document } :
+          message.type === 'JOIN' ? { type: 'JOINED', version: 1, documentId: document, format: 'PLAIN_TEXT_V1' } :
           message.type === 'SYNC' && message.after === 0 ? { type: 'SYNC_PAGE', version: 1, documentId: document, epoch: 0,
             updates: [{ sequence: 1, payload: 'AAA=' }], after: 1, head: 2, hasMore: true } : null;
         if (reply) setTimeout(() => this.onmessage?.({ data: JSON.stringify(reply) }), 0);
@@ -32,7 +32,7 @@ test('a first synchronization interrupted mid-replay is not an offline editing b
       close() { this.readyState = 3; setTimeout(() => this.onclose?.({ code: 1006 }), 0); }
     }
     window.WebSocket = FakeSocket as unknown as typeof WebSocket;
-    new PlainTextProvider(user, workspace, document, state => { hooks.phase = state.phase; });
+    new DocumentProvider(user, workspace, document, state => { hooks.phase = state.phase; });
   }, { user, workspace, document });
   await expect.poll(() => page.evaluate(() => (window as unknown as Window & { phase: string }).phase)).toBe('syncing');
   await expect.poll(() => page.evaluate(() => (window as unknown as Window & { requestedSecondPage: boolean }).requestedSecondPage)).toBe(true);
@@ -50,7 +50,7 @@ test('an epoch change rejects reconciliation before pending updates are sent', a
   await page.evaluate(async ({ user, workspace, document, id }) => {
     const storagePath = '/src/localDocumentStore.ts', providerPath = '/src/provider.ts';
     const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/localDocumentStore');
-    const { PlainTextProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
+    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
     const store = await LocalDocumentStore.open(user, workspace, document, 0);
     await store.save({ version: 1, state: new Uint8Array([0, 0]), pending: [{ id, payload: 'AAA=' }] });
     await store.close();
@@ -70,14 +70,14 @@ test('an epoch change rejects reconciliation before pending updates are sent', a
         const message = JSON.parse(data) as { type: string };
         if (message.type === 'SUBMIT_UPDATE') hooks.submissions++;
         const reply = message.type === 'HELLO' ? { type: 'WELCOME', version: 1, workspaceId: workspace, userId: user } :
-          message.type === 'JOIN' ? { type: 'JOINED', version: 1, documentId: document } :
+          message.type === 'JOIN' ? { type: 'JOINED', version: 1, documentId: document, format: 'PLAIN_TEXT_V1' } :
           message.type === 'SYNC' ? { type: 'REJECTED', version: 1, code: 'EPOCH_CHANGED' } : null;
         if (reply) setTimeout(() => this.onmessage?.({ data: JSON.stringify(reply) }), 0);
       }
       close() { this.readyState = 3; setTimeout(() => this.onclose?.({ code: 1000 }), 0); }
     }
     window.WebSocket = FakeSocket as unknown as typeof WebSocket;
-    new PlainTextProvider(user, workspace, document, state => { hooks.phase = state.phase; hooks.message = state.message; hooks.pending = state.pending; });
+    new DocumentProvider(user, workspace, document, state => { hooks.phase = state.phase; hooks.message = state.message; hooks.pending = state.pending; });
   }, { user, workspace, document, id });
   await expect.poll(() => page.evaluate(() => (window as unknown as Window & { phase: string }).phase)).toBe('failed');
   const result = await page.evaluate(() => {
@@ -99,7 +99,7 @@ test('a repeatedly unavailable update engine increases retry delays after succes
   await page.evaluate(async ({ user, workspace, document, id }) => {
     const storagePath = '/src/localDocumentStore.ts', providerPath = '/src/provider.ts';
     const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/localDocumentStore');
-    const { PlainTextProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
+    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
     const store = await LocalDocumentStore.open(user, workspace, document, 0);
     await store.save({ version: 1, state: new Uint8Array([0, 0]), pending: [{ id, payload: 'AAA=' }] });
     await store.close();
@@ -119,7 +119,7 @@ test('a repeatedly unavailable update engine increases retry delays after succes
         const message = JSON.parse(data) as { type: string };
         if (message.type === 'SUBMIT_UPDATE') hooks.attempts.push(Date.now());
         const reply = message.type === 'HELLO' ? { type: 'WELCOME', version: 1, workspaceId: workspace, userId: user } :
-          message.type === 'JOIN' ? { type: 'JOINED', version: 1, documentId: document } :
+          message.type === 'JOIN' ? { type: 'JOINED', version: 1, documentId: document, format: 'PLAIN_TEXT_V1' } :
           message.type === 'SYNC' ? { type: 'SYNC_PAGE', version: 1, documentId: document, epoch: 0, after: 0, head: 0, hasMore: false, updates: [] } :
           message.type === 'SUBMIT_UPDATE' ? { type: 'REJECTED', version: 1, code: 'ENGINE_UNAVAILABLE' } : null;
         if (reply) setTimeout(() => this.onmessage?.({ data: JSON.stringify(reply) }), 0);
@@ -127,7 +127,7 @@ test('a repeatedly unavailable update engine increases retry delays after succes
       close() { this.readyState = 3; setTimeout(() => this.onclose?.({ code: 1000 }), 0); }
     }
     window.WebSocket = FakeSocket as unknown as typeof WebSocket;
-    const provider = new PlainTextProvider(user, workspace, document, () => {});
+    const provider = new DocumentProvider(user, workspace, document, () => {});
     hooks.stop = () => provider.destroy();
   }, { user, workspace, document, id });
   await expect.poll(() => page.evaluate(() => (window as unknown as Window & { attempts: number[] }).attempts.length), { timeout: 12000 }).toBeGreaterThanOrEqual(3);
@@ -150,7 +150,7 @@ test('a socket authenticated as a different account cannot join or submit a save
   await page.evaluate(async ({ user, other, workspace, document, id }) => {
     const storagePath = '/src/localDocumentStore.ts', providerPath = '/src/provider.ts';
     const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/localDocumentStore');
-    const { PlainTextProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
+    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
     const store = await LocalDocumentStore.open(user, workspace, document, 0);
     await store.save({ version: 1, state: new Uint8Array([0, 0]), pending: [{ id, payload: 'AAA=' }] });
     await store.close();
@@ -174,11 +174,91 @@ test('a socket authenticated as a different account cannot join or submit a save
       close() { this.readyState = 3; setTimeout(() => this.onclose?.({ code: 1000 }), 0); }
     }
     window.WebSocket = FakeSocket as unknown as typeof WebSocket;
-    new PlainTextProvider(user, workspace, document, state => { hooks.phase = state.phase; hooks.pending = state.pending; });
+    new DocumentProvider(user, workspace, document, state => { hooks.phase = state.phase; hooks.pending = state.pending; });
   }, { user, other, workspace, document, id });
   await expect.poll(() => page.evaluate(() => (window as unknown as Window & { phase: string }).phase)).toBe('failed');
   expect(await page.evaluate(() => {
     const hooks = window as unknown as Window & { sent: string[]; pending: number };
     return { sent: hooks.sent, pending: hooks.pending };
   })).toEqual({ sent: ['HELLO'], pending: 1 });
+});
+
+test('a rich client negotiates its format without creating the plain-text root', async ({ page }) => {
+  const user = '10000000-0000-4000-8000-000000000041';
+  const workspace = '20000000-0000-4000-8000-000000000041';
+  const document = '30000000-0000-4000-8000-000000000041';
+  await page.route('**/api/me', route => route.fulfill({ status: 200, json: { username: 'test@example.com', id: user } }));
+  await page.goto('/');
+  await page.evaluate(async ({ user, workspace, document }) => {
+    const path = '/src/provider.ts';
+    const { DocumentProvider } = await import(/* @vite-ignore */ path) as typeof import('../src/provider');
+    const hooks = window as unknown as Window & { phase: string; requested?: string; roots: string[] };
+    class FakeSocket {
+      static readonly OPEN = 1;
+      static readonly CONNECTING = 0;
+      readyState = 1;
+      bufferedAmount = 0;
+      onopen?: () => void;
+      onmessage?: (event: { data: string }) => void;
+      onclose?: (event: { code: number }) => void;
+      onerror?: () => void;
+      constructor() { setTimeout(() => this.onopen?.(), 0); }
+      send(data: string) {
+        const message = JSON.parse(data) as { type: string; format?: string };
+        if (message.type === 'JOIN') hooks.requested = message.format;
+        const reply = message.type === 'HELLO' ? { type: 'WELCOME', version: 1, workspaceId: workspace, userId: user } :
+          message.type === 'JOIN' ? { type: 'REJECTED', version: 1, code: 'SCHEMA_UNSUPPORTED' } : null;
+        if (reply) setTimeout(() => this.onmessage?.({ data: JSON.stringify(reply) }), 0);
+      }
+      close() { this.readyState = 3; setTimeout(() => this.onclose?.({ code: 1000 }), 0); }
+    }
+    window.WebSocket = FakeSocket as unknown as typeof WebSocket;
+    const provider = new DocumentProvider(user, workspace, document, state => { hooks.phase = state.phase; }, 'RICH_TEXT_V1');
+    hooks.roots = [...provider.sharedDocument.share.keys()];
+  }, { user, workspace, document });
+  await expect.poll(() => page.evaluate(() => (window as unknown as Window & { phase: string }).phase)).toBe('failed');
+  expect(await page.evaluate(() => {
+    const hooks = window as unknown as Window & { requested?: string; roots: string[] };
+    return { requested: hooks.requested, roots: hooks.roots };
+  })).toEqual({ requested: 'RICH_TEXT_V1', roots: [] });
+});
+
+test('a document limit rejection keeps the pending local draft and explains the failure', async ({ page }) => {
+  const user = '10000000-0000-4000-8000-000000000051';
+  const workspace = '20000000-0000-4000-8000-000000000051';
+  const document = '30000000-0000-4000-8000-000000000051';
+  await page.route('**/api/me', route => route.fulfill({ status: 200, json: { username: 'test@example.com', id: user } }));
+  await page.goto('/');
+  await page.evaluate(async ({ user, workspace, document }) => {
+    const storagePath = '/src/localDocumentStore.ts', providerPath = '/src/provider.ts';
+    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/localDocumentStore');
+    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
+    const store = await LocalDocumentStore.open(user, workspace, document, 0);
+    await store.save({ version: 1, state: new Uint8Array([0, 0]), pending: [{ id: '40000000-0000-4000-8000-000000000051', payload: 'AAA=' }] });
+    await store.close();
+    const hooks = window as unknown as Window & { phase: string; message: string; pending: number };
+    class FakeSocket {
+      static readonly OPEN = 1; static readonly CONNECTING = 0;
+      readyState = 1; bufferedAmount = 0;
+      onopen?: () => void; onmessage?: (event: { data: string }) => void; onclose?: (event: { code: number }) => void;
+      constructor() { setTimeout(() => this.onopen?.(), 0); }
+      send(data: string) {
+        const message = JSON.parse(data) as { type: string };
+        const reply = message.type === 'HELLO' ? { type: 'WELCOME', version: 1, workspaceId: workspace, userId: user } :
+          message.type === 'JOIN' ? { type: 'REJECTED', version: 1, code: 'DOCUMENT_LIMIT' } : null;
+        if (reply) setTimeout(() => this.onmessage?.({ data: JSON.stringify(reply) }), 0);
+      }
+      close() { this.readyState = 3; setTimeout(() => this.onclose?.({ code: 1000 }), 0); }
+    }
+    window.WebSocket = FakeSocket as unknown as typeof WebSocket;
+    new DocumentProvider(user, workspace, document, state => { hooks.phase = state.phase; hooks.message = state.message; hooks.pending = state.pending; });
+  }, { user, workspace, document });
+  await expect.poll(() => page.evaluate(() => (window as unknown as Window & { phase: string }).phase)).toBe('failed');
+  const result = await page.evaluate(() => {
+    const hooks = window as unknown as Window & { message: string; pending: number };
+    return { message: hooks.message, pending: hooks.pending };
+  });
+  expect(result.message).toContain('reached a server limit');
+  expect(result.message).toContain('not saved to the server');
+  expect(result.pending).toBe(1);
 });

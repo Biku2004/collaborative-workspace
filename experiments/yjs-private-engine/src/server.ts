@@ -4,10 +4,10 @@ import { pathToFileURL } from 'node:url';
 import { InputError, LIMITS, parseRequest, parseRichRequest } from './protocol.js';
 import contract from '@workspace/rich-text-schema-v1/contract.json' with { type: 'json' };
 
-function respond(res: ServerResponse, status: number, body: unknown): void {
+function respond(res: ServerResponse, status: number, body: unknown, maximum: number = LIMITS.outputBytes): void {
   if (res.destroyed || res.writableEnded) return;
   const output = JSON.stringify(body);
-  if (Buffer.byteLength(output) > LIMITS.outputBytes) { respond(res, 422, { code: 'TOO_LARGE' }); return; }
+  if (Buffer.byteLength(output) > maximum) { respond(res, 422, { code: 'TOO_LARGE' }); return; }
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(output);
 }
@@ -28,7 +28,7 @@ export function createEngineServer(deadlineMs: number = LIMITS.deadlineMs, worke
       finished = true; clearTimeout(timer);
       if (!worker) active--;
       if (worker) void worker.terminate();
-      respond(res, status, body);
+      respond(res, status, body, rich ? LIMITS.richOutputBytes : LIMITS.outputBytes);
     };
     const timer = setTimeout(() => finish(504, { code: 'TIMEOUT' }), deadlineMs);
     req.on('aborted', () => finish(400, { code: 'INVALID_REQUEST' }));
@@ -42,12 +42,14 @@ export function createEngineServer(deadlineMs: number = LIMITS.deadlineMs, worke
     req.on('end', () => {
       if (finished) return;
       let updates: Uint8Array[];
+      let commit = false;
       try {
         const request: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-        updates = rich ? parseRichRequest(request) : parseRequest(request);
+        if (rich) ({ updates, commit } = parseRichRequest(request));
+        else updates = parseRequest(request);
       }
       catch (error) { finish(400, { code: error instanceof InputError ? error.code : 'INVALID_REQUEST' }); return; }
-      try { worker = new Worker(workerUrl, { workerData: rich ? { format: contract.format, updates } : updates, resourceLimits: { maxOldGenerationSizeMb: 64, maxYoungGenerationSizeMb: 16, stackSizeMb: 4 } }); }
+      try { worker = new Worker(workerUrl, { workerData: rich ? { format: contract.format, updates, commit } : updates, resourceLimits: { maxOldGenerationSizeMb: 64, maxYoungGenerationSizeMb: 16, stackSizeMb: 4 } }); }
       catch { finish(500, { code: 'ENGINE_FAILURE' }); return; }
       worker.once('message', (message: { ok: boolean; result?: unknown; code?: string }) => {
         if (message.ok) finish(200, message.result);

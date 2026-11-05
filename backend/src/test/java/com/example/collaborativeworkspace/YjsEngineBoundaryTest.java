@@ -38,6 +38,19 @@ class YjsEngineBoundaryTest {
             assertEquals(422, missing.statusCode());
             assertEquals("MISSING_DEPENDENCY", json.readTree(missing.body()).path("code").asText());
             var client = new YjsEngineClient("http://127.0.0.1:" + port, json, Duration.ofSeconds(5));
+            var bootstrap = new RichTextContract(json).initialUpdate();
+            assertTrue(client.reconstructRich(java.util.List.of(bootstrap)).initialized());
+            var richFixture = new Properties();
+            try (var reader = Files.newBufferedReader(engine.resolve("fixtures/rich-text.properties"))) { richFixture.load(reader); }
+            byte[] richUpdate = Base64.getDecoder().decode(roundTrip(richFixture.getProperty("update")));
+            assertFalse(client.reconstructRich(java.util.List.of(new byte[] {0, 0})).initialized());
+            var richCandidate = client.reconstructRich(java.util.List.of(richUpdate));
+            assertTrue(richCandidate.initialized());
+            byte[] richCopy = richCandidate.checkpoint(); richCopy[0] ^= 1;
+            assertNotEquals(richCopy[0], richCandidate.checkpoint()[0]);
+            assertTrue(client.reconstructRich(java.util.List.of(richCandidate.checkpoint())).initialized());
+            assertTrue(assertThrows(YjsEngineException.class, () -> client.reconstruct(java.util.List.of(richUpdate))).rejected());
+            assertTrue(assertThrows(YjsEngineException.class, () -> client.reconstructRich(java.util.List.of(Base64.getDecoder().decode(first)))).rejected());
             YjsEngineException rejected = assertThrows(YjsEngineException.class,
                     () -> client.reconstruct(java.util.List.of(Base64.getDecoder().decode(dependent))));
             assertTrue(rejected.rejected());

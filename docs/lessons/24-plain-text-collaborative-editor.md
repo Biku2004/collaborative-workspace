@@ -30,7 +30,7 @@ The provider suppresses outbound submission when applying a remote update. That 
 
 ## 4. Follow the code
 
-1. `frontend/src/provider.ts` contains the online-only `PlainTextProvider`. It owns one `Y.Doc`, one `Y.Text`, one WebSocket and an in-memory queue of pending submissions. It has no localStorage, IndexedDB or cross-tab transport.
+1. `frontend/src/provider.ts` contained the online-only provider (now named `DocumentProvider`). At this lesson it owned one `Y.Doc`, one `Y.Text`, one WebSocket and an in-memory queue of pending submissions. It had no localStorage, IndexedDB or cross-tab transport.
 2. On connection it sends `HELLO`, then `JOIN`, then requests `SYNC` from sequence 0. Editing is enabled only after the required replay is applied. The provider keeps the **last contiguous sequence applied**, validates replay pages and ignores duplicate sequences.
 3. `HEAD` and out-of-order `UPDATE` messages can reveal a gap. The provider requests another bounded `SYNC` from its contiguous position; it does not advance a cursor merely because a larger sequence was seen. Only one replay request is in flight at a time.
 4. A local text change is converted into a Yjs transaction. The diff compares Unicode code points, then calculates Yjs positions in UTF-16 units, avoiding a boundary through an emoji surrogate pair. Combining sequences may still consist of multiple code points; cursor/selection preservation is future work.

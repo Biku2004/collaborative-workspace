@@ -41,6 +41,7 @@ const proxy = {
 // Local learning setup: browser requests and cookies remain same-origin via this proxy.
 export default defineConfig({
   plugins: [offlineShell()],
+  optimizeDeps: { include: ['@tiptap/react', '@tiptap/extension-collaboration', '@tiptap/starter-kit', '@tiptap/y-tiptap', 'yjs'] },
   server: {
     host: '127.0.0.1', port: 5173, strictPort: true,
     proxy,

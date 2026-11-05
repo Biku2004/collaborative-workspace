@@ -14,20 +14,20 @@ public class DocumentUpdateRepository {
     private final JdbcTemplate jdbc;
     public DocumentUpdateRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
-    public record Snapshot(long epoch, long sequence, byte[] checkpoint, WorkspaceRole role, boolean archived) {}
+    public record Snapshot(long epoch, long sequence, byte[] checkpoint, WorkspaceRole role, boolean archived, String collaborationFormat) {}
     public record Existing(long sequence, UUID actor, byte[] payload) {}
     public record Update(UUID documentId, long epoch, long sequence, UUID updateId, UUID actor, byte[] payload) {}
     public record PendingEvent(UUID eventId, UUID workspaceId, Update update) {}
 
     public Optional<Snapshot> findAccessible(UUID workspace, UUID document, UUID user) {
-        return jdbc.query("SELECT d.archived, m.role, s.epoch, s.head_sequence, s.checkpoint FROM documents d JOIN workspace_members m ON m.workspace_id=d.workspace_id LEFT JOIN document_streams s ON s.document_id=d.id WHERE d.workspace_id=? AND d.id=? AND m.user_id=?",
+        return jdbc.query("SELECT d.archived, d.collaboration_format, m.role, s.epoch, s.head_sequence, s.checkpoint FROM documents d JOIN workspace_members m ON m.workspace_id=d.workspace_id LEFT JOIN document_streams s ON s.document_id=d.id WHERE d.workspace_id=? AND d.id=? AND m.user_id=?",
                 this::snapshot, workspace, document, user).stream().findFirst();
     }
 
     private Snapshot snapshot(ResultSet rs, int row) throws SQLException {
         byte[] checkpoint = rs.getBytes("checkpoint");
         return new Snapshot(rs.getLong("epoch"), rs.getLong("head_sequence"), checkpoint == null ? EMPTY_CHECKPOINT.clone() : checkpoint,
-                WorkspaceRole.valueOf(rs.getString("role")), rs.getBoolean("archived"));
+                WorkspaceRole.valueOf(rs.getString("role")), rs.getBoolean("archived"), rs.getString("collaboration_format"));
     }
 
     public boolean lockDocument(UUID workspace, UUID document) {

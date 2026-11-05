@@ -46,6 +46,10 @@ public class DocumentRoomHub {
         }
         boolean workspaceAllowed() { return sessionValid() && workspaces.memberRole(workspace, user).isPresent(); }
         boolean allowed(UUID id) { return sessionValid() && documents.canRead(workspace, id, user); }
+        java.util.Optional<String> readableFormat(UUID id) {
+            if (!sessionValid()) return java.util.Optional.empty();
+            return documents.findVisible(id, user).filter(document -> workspace.equals(document.workspaceId())).map(Document::collaborationFormat);
+        }
     }
 
     Peer add(WebSocketSession socket) {

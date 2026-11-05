@@ -1,6 +1,8 @@
 {
   "format": "RICH_TEXT_V1",
   "root": "body",
+  "initialUpdate": "AQGAgIDoBAAHAQRib2R5AwlwYXJhZ3JhcGgA",
+  "initialClientId": 1291845632,
   "starterKit": {
     "blockquote": false,
     "code": false,

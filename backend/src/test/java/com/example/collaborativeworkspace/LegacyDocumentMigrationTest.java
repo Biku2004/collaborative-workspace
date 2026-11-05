@@ -100,7 +100,7 @@ class LegacyDocumentMigrationTest {
                         document, UUID.randomUUID(), actor, update, new byte[32]);
                 jdbc.update("INSERT INTO document_update_outbox(event_id, document_id, epoch, sequence) VALUES (?, ?, 0, 1)", UUID.randomUUID(), document);
             }
-            Flyway.configure().dataSource(url, user, password).schemas(schema).defaultSchema(schema).load().migrate();
+            Flyway.configure().dataSource(url, user, password).schemas(schema).defaultSchema(schema).target("10").load().migrate();
             try (var connection = DriverManager.getConnection(url, user, password)) {
                 connection.setSchema(schema);
                 var jdbc = new JdbcTemplate(new SingleConnectionDataSource(connection, true));

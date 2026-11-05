@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import * as Y from 'yjs';
 import { createEngineServer } from '../src/server.js';
 import { LIMITS } from '../src/protocol.js';
+import contract from '@workspace/rich-text-schema-v1/contract.json' with { type: 'json' };
 
 async function withServer(run: (url: string) => Promise<void>, deadline: number = LIMITS.deadlineMs, worker?: URL) {
   const server = createEngineServer(deadline, worker);
@@ -50,6 +51,8 @@ test('private version 2 validates a bounded rich-text candidate and rejects unsu
       assert.equal(typeof checkpoint, 'string');
       assert.equal((await post(url, { version: 2, format: 'RICH_TEXT_V1', updates: [checkpoint] })).status, 200);
       assert.equal((await post(url, { version: 2, format: 'UNKNOWN', updates: [encoded] })).status, 400);
+      assert.equal((await post(url, { version: 2, format: 'RICH_TEXT_V1', mode: 'commit', updates: [encoded] })).status, 400);
+      assert.equal((await post(url, { version: 2, format: 'RICH_TEXT_V1', mode: 'other', updates: [encoded] })).status, 400);
       assert.equal((await post(url, { version: 1, updates: [encoded] })).status, 400);
       const plain = new Y.Doc(); plain.getText('content').insert(0, 'plain');
       const wrongRoot = await post(url, { version: 2, format: 'RICH_TEXT_V1', updates: [b64(Y.encodeStateAsUpdate(plain))] });
@@ -61,6 +64,85 @@ test('private version 2 validates a bounded rich-text candidate and rejects unsu
       assert.equal(invalid.status, 422);
       assert.equal(invalid.body.code, 'UNSUPPORTED_DOCUMENT');
       assert.equal(invalid.body.checkpoint, undefined);
+    });
+  } finally { doc.destroy(); }
+});
+
+test('version 2 commit mode protects prior position history at the HTTP boundary', async () => {
+  const fixture = readFileSync(new URL('../../fixtures/rich-heading.properties', import.meta.url), 'utf8');
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, Buffer.from(contract.initialUpdate, 'base64'));
+    for (let i = 1; i <= 4; i++) {
+      const encoded = new RegExp(`^update${i}=(.+)$`, 'm').exec(fixture)?.[1]?.trim();
+      assert.ok(encoded); Y.applyUpdate(doc, Buffer.from(encoded, 'base64'));
+    }
+    const checkpoint = Y.encodeStateAsUpdate(doc), vector = Y.encodeStateVector(doc);
+    const metadata = doc.getMap('__tiptap_position_migrations:root:body');
+    const key = [...metadata.keys()][0]; assert.ok(key);
+    metadata.delete(key);
+    const deletion = Y.encodeStateAsUpdate(doc, vector);
+    await withServer(async legacyUrl => {
+      const url = legacyUrl.replace('/v1/', '/v2/');
+      const result = await post(url, { version: 2, format: 'RICH_TEXT_V1', mode: 'commit', updates: [b64(checkpoint), b64(deletion)] });
+      assert.equal(result.status, 422);
+      assert.equal(result.body.code, 'UNSUPPORTED_DOCUMENT');
+      assert.equal(result.body.checkpoint, undefined);
+    });
+  } finally { doc.destroy(); }
+});
+
+test('rich commit accepts a larger checkpoint but still bounds the incoming update', async () => {
+  const doc = new Y.Doc();
+  try {
+    const paragraph = new Y.XmlElement('paragraph'), text = new Y.XmlText();
+    doc.getXmlFragment('body').insert(0, [paragraph]); paragraph.insert(0, [text]); text.insert(0, 'x'.repeat(9000));
+    const checkpoint = Y.encodeStateAsUpdate(doc), vector = Y.encodeStateVector(doc);
+    assert.ok(checkpoint.byteLength > 8192);
+    text.insert(text.length, '!');
+    const update = Y.encodeStateAsUpdate(doc, vector);
+    await withServer(async legacyUrl => {
+      const url = legacyUrl.replace('/v1/', '/v2/');
+      const result = await post(url, { version: 2, format: 'RICH_TEXT_V1', mode: 'commit', updates: [b64(checkpoint), b64(update)] });
+      assert.equal(result.status, 200);
+      assert.ok(Buffer.from(result.body.checkpoint as string, 'base64').length > 8192);
+      const tooBig = await post(url, { version: 2, format: 'RICH_TEXT_V1', mode: 'commit', updates: [b64(checkpoint), b64(new Uint8Array(8193))] });
+      assert.equal(tooBig.status, 400);
+    });
+  } finally { doc.destroy(); }
+});
+
+test('a valid bounded rich document fits the response even when JSON expands its text', async () => {
+  const doc = new Y.Doc(), updates: Uint8Array[] = [];
+  try {
+    doc.on('update', (update: Uint8Array) => updates.push(update.slice()));
+    const paragraph = new Y.XmlElement('paragraph'), text = new Y.XmlText();
+    doc.transact(() => { doc.getXmlFragment('body').insert(0, [paragraph]); paragraph.insert(0, [text]); text.insert(0, '\u0000'.repeat(6000)); });
+    text.insert(6000, '\u0000'.repeat(6000));
+    assert.ok(updates.every(update => update.length <= 8192));
+    await withServer(async legacyUrl => {
+      const result = await post(legacyUrl.replace('/v1/', '/v2/'), { version: 2, format: 'RICH_TEXT_V1', updates: updates.map(b64) });
+      assert.equal(result.status, 200);
+      assert.equal(result.body.initialized, true);
+      assert.ok(Buffer.from(result.body.checkpoint as string, 'base64').length <= 32768);
+    });
+  } finally { doc.destroy(); }
+});
+
+test('rich commit refuses deletion of the last paragraph through HTTP', async () => {
+  const doc = new Y.Doc();
+  try {
+    const checkpoint = Buffer.from(contract.initialUpdate, 'base64');
+    Y.applyUpdate(doc, checkpoint);
+    const vector = Y.encodeStateVector(doc);
+    doc.getXmlFragment(contract.root).delete(0, 1);
+    await withServer(async legacyUrl => {
+      const result = await post(legacyUrl.replace('/v1/', '/v2/'), {
+        version: 2, format: 'RICH_TEXT_V1', mode: 'commit', updates: [b64(checkpoint), b64(Y.encodeStateAsUpdate(doc, vector))],
+      });
+      assert.equal(result.status, 422);
+      assert.equal(result.body.code, 'UNSUPPORTED_DOCUMENT');
+      assert.equal(result.body.checkpoint, undefined);
     });
   } finally { doc.destroy(); }
 });

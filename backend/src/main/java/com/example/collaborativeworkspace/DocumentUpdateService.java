@@ -20,13 +20,14 @@ public class DocumentUpdateService {
     private final DocumentUpdateRepository updates;
     private final WorkspaceRepository workspaces;
     private final YjsEngineClient engine;
+    private final CollaborationFormatPolicy formats;
     private final TransactionTemplate transaction;
 
     public record Saved(UUID documentId, long epoch, long sequence, UUID updateId, boolean duplicate) {}
 
-    public DocumentUpdateService(DocumentUpdateRepository updates, WorkspaceRepository workspaces, YjsEngineClient engine,
+    public DocumentUpdateService(DocumentUpdateRepository updates, WorkspaceRepository workspaces, YjsEngineClient engine, CollaborationFormatPolicy formats,
             PlatformTransactionManager transactionManager) {
-        this.updates = updates; this.workspaces = workspaces; this.engine = engine;
+        this.updates = updates; this.workspaces = workspaces; this.engine = engine; this.formats = formats;
         this.transaction = new TransactionTemplate(transactionManager);
         this.transaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
@@ -53,7 +54,9 @@ public class DocumentUpdateService {
             if (existing.isPresent()) return verifyDuplicate(document, epoch, updateId, actor, payload, existing.get());
 
             // This checkpoint and candidate are speculative: do not write or broadcast them yet.
-            var candidate = engine.reconstruct(List.of(base.checkpoint(), payload));
+            byte[] candidate = "RICH_TEXT_V1".equals(base.collaborationFormat())
+                    ? engine.reconstructRichForCommit(List.of(base.checkpoint(), payload)).checkpoint()
+                    : engine.reconstruct(List.of(base.checkpoint(), payload)).checkpoint();
             try {
                 Saved result;
                 synchronized (sessionGuard) {
@@ -65,13 +68,14 @@ public class DocumentUpdateService {
                     updates.ensureStream(document);
                     var current = accessible(workspace, document, actor);
                     requireWritable(current, epoch);
+                    if (!current.collaborationFormat().equals(base.collaborationFormat())) throw new DocumentUpdateException("SCHEMA_UNSUPPORTED");
                     var duplicate = updates.findUpdate(document, epoch, updateId);
                     if (duplicate.isPresent()) return verifyDuplicate(document, epoch, updateId, actor, payload, duplicate.get());
                     if (current.sequence() != base.sequence() || !Arrays.equals(current.checkpoint(), base.checkpoint()))
                         throw new DocumentUpdateException("RETRY_HEAD_CHANGED");
                     long sequence = Math.addExact(current.sequence(), 1);
                     updates.saveUpdate(document, epoch, sequence, updateId, actor, payload, digest);
-                    updates.saveHead(document, epoch, sequence, candidate.checkpoint());
+                    updates.saveHead(document, epoch, sequence, candidate);
                     updates.insertOutbox(document, epoch, sequence);
                     return new Saved(document, epoch, sequence, updateId, false);
                     });
@@ -88,6 +92,7 @@ public class DocumentUpdateService {
         return updates.findAccessible(workspace, document, actor).orElseThrow(() -> new DocumentUpdateException("NOT_FOUND"));
     }
     private void requireWritable(DocumentUpdateRepository.Snapshot snapshot, long epoch) {
+        if (!formats.supports(snapshot.collaborationFormat())) throw new DocumentUpdateException("SCHEMA_UNSUPPORTED");
         if (snapshot.role() == WorkspaceRole.VIEWER) throw new DocumentUpdateException("ACCESS_DENIED");
         if (snapshot.archived()) throw new DocumentUpdateException("DOCUMENT_ARCHIVED");
         if (snapshot.epoch() != epoch) throw new DocumentUpdateException("EPOCH_CHANGED");

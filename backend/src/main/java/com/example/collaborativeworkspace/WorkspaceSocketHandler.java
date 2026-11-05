@@ -19,8 +19,9 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
     private final DocumentRoomHub rooms;
     private final DocumentUpdateService updates;
     private final DocumentDeliveryService delivery;
-    public WorkspaceSocketHandler(SocketSessionRegistry registry, JsonMapper json, DocumentRoomHub rooms, DocumentUpdateService updates, DocumentDeliveryService delivery) {
-        this.registry = registry; this.json = json; this.rooms = rooms; this.updates = updates; this.delivery = delivery;
+    private final CollaborationFormatPolicy formats;
+    public WorkspaceSocketHandler(SocketSessionRegistry registry, JsonMapper json, DocumentRoomHub rooms, DocumentUpdateService updates, DocumentDeliveryService delivery, CollaborationFormatPolicy formats) {
+        this.registry = registry; this.json = json; this.rooms = rooms; this.updates = updates; this.delivery = delivery; this.formats = formats;
     }
 
     @Override public void afterConnectionEstablished(WebSocketSession socket) throws Exception {
@@ -47,13 +48,19 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
                 if (!type.equals("HELLO") || root.size() != 2 || !peer.workspaceAllowed()) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
                 peer.welcomed = true;
                 peer.sender.send(json.writeValueAsString(Map.of("type", "WELCOME", "version", 1, "workspaceId", peer.workspace, "userId", peer.user)), peer::workspaceAllowed);
-            } else if (type.equals("JOIN") && root.size() == 3 && root.path("documentId").isTextual() && peer.document == null) {
+            } else if (type.equals("JOIN") && (root.size() == 3 || (root.size() == 4 && root.path("format").isTextual())) && root.path("documentId").isTextual() && peer.document == null) {
                 java.util.UUID document;
                 try { document = java.util.UUID.fromString(root.path("documentId").asText()); }
                 catch (IllegalArgumentException ex) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
-                if (!peer.allowed(document)) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
+                var format = peer.readableFormat(document);
+                if (format.isEmpty()) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
+                String requested = root.size() == 3 ? "PLAIN_TEXT_V1" : root.path("format").asText();
+                if (!formats.supports(format.get()) || !format.get().equals(requested)) {
+                    peer.sender.send(json.writeValueAsString(Map.of("type", "REJECTED", "version", 1, "code", "SCHEMA_UNSUPPORTED")), peer::workspaceAllowed);
+                    return;
+                }
                 peer.document = document;
-                peer.sender.send(json.writeValueAsString(Map.of("type", "JOINED", "version", 1, "documentId", document)), () -> document.equals(peer.document) && peer.allowed(document));
+                peer.sender.send(json.writeValueAsString(Map.of("type", "JOINED", "version", 1, "documentId", document, "format", format.get())), () -> document.equals(peer.document) && peer.allowed(document));
                 peer.roomReady = true;
             } else if (type.equals("LEAVE") && root.size() == 2 && peer.document != null) {
                 java.util.UUID document = peer.document;
@@ -91,7 +98,8 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
                 } catch (DocumentUpdateException ex) {
                     peer.sender.send(json.writeValueAsString(Map.of("type", "REJECTED", "version", 1, "code", ex.code())), peer::workspaceAllowed);
                 } catch (YjsEngineException ex) {
-                    peer.sender.send(json.writeValueAsString(Map.of("type", "REJECTED", "version", 1, "code", ex.rejected() ? "INVALID_UPDATE" : "ENGINE_UNAVAILABLE")), peer::workspaceAllowed);
+                    String code = ex.limitExceeded() ? "DOCUMENT_LIMIT" : ex.rejected() ? "INVALID_UPDATE" : "ENGINE_UNAVAILABLE";
+                    peer.sender.send(json.writeValueAsString(Map.of("type", "REJECTED", "version", 1, "code", code)), peer::workspaceAllowed);
                 } catch (RuntimeException ex) {
                     // The outcome may be unknown if commit failed after the database accepted it. Retry with the same update ID.
                     org.slf4j.LoggerFactory.getLogger(getClass()).error("Document update failed: {}", ex.getClass().getName());

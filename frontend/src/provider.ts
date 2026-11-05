@@ -3,9 +3,10 @@ import { LocalDocumentStore } from './localDocumentStore';
 import { ApiError, currentUser } from './api';
 
 type Phase = 'connecting' | 'syncing' | 'ready' | 'offline' | 'waiting' | 'failed';
-export type EditorState = { phase: Phase; text: string; pending: number; message: string };
+export type EditorState = { phase: Phase; text: string; pending: number; message: string; hasLocalState: boolean };
 type Pending = { id: string; payload: string };
 type UpdateEvent = { sequence: number; payload: string };
+export type CollaborationFormat = 'PLAIN_TEXT_V1' | 'RICH_TEXT_V1';
 const REMOTE = Symbol('remote-update');
 const MAX_PENDING = 32;
 const MAX_TEXT_BYTES = 4000;
@@ -31,9 +32,9 @@ function encode(bytes: Uint8Array): string {
 }
 
 /** A deliberately small custom plain-text provider. It is not y-websocket. */
-export class PlainTextProvider {
+export class DocumentProvider {
   private readonly doc = new Y.Doc();
-  private readonly text = this.doc.getText('content');
+  private readonly text?: Y.Text;
   private socket?: WebSocket;
   private store?: LocalDocumentStore;
   private revision = 0;
@@ -57,8 +58,9 @@ export class PlainTextProvider {
   private identityAbort?: AbortController;
 
   constructor(private readonly userId: string, private readonly workspaceId: string, private readonly documentId: string,
-              private readonly changed: (state: EditorState) => void) {
-    this.text.observe(this.onText);
+              private readonly changed: (state: EditorState) => void, private readonly format: CollaborationFormat = 'PLAIN_TEXT_V1') {
+    if (format === 'PLAIN_TEXT_V1') this.text = this.doc.getText('content');
+    this.text?.observe(this.onText);
     this.doc.on('update', this.onUpdate);
     window.addEventListener('online', this.onOnline);
     window.addEventListener('offline', this.onOffline);
@@ -70,7 +72,7 @@ export class PlainTextProvider {
 
   private async initialize(): Promise<void> {
     try {
-      const store = await LocalDocumentStore.open(this.userId, this.workspaceId, this.documentId, 0);
+      const store = await LocalDocumentStore.open(this.userId, this.workspaceId, this.documentId, 0, this.format);
       if (this.disposed) { await store.close(); return; }
       this.store = store;
       const cached = await store.load();
@@ -148,11 +150,12 @@ export class PlainTextProvider {
   };
 
   setText(next: string): void {
-    if (this.phase !== 'ready' && this.phase !== 'offline') return;
+    const text = this.text;
+    if (!text || (this.phase !== 'ready' && this.phase !== 'offline')) return;
     if (new TextEncoder().encode(next).byteLength > MAX_TEXT_BYTES) {
       this.message = 'The learning editor is limited to 4,000 UTF-8 bytes.'; this.emit(); return;
     }
-    const current = this.text.toString();
+    const current = text.toString();
     if (current === next) return;
     // Compare code points so an emoji surrogate pair is never split by a diff boundary.
     const oldPoints = Array.from(current), newPoints = Array.from(next);
@@ -164,8 +167,8 @@ export class PlainTextProvider {
     const removed = oldPoints.slice(prefix, oldPoints.length - suffix).join('').length;
     const inserted = newPoints.slice(prefix, newPoints.length - suffix).join('');
     this.doc.transact(() => {
-      if (removed) this.text.delete(start, removed);
-      if (inserted) this.text.insert(start, inserted);
+      if (removed) text.delete(start, removed);
+      if (inserted) text.insert(start, inserted);
     });
     if (this.phase === 'ready' || this.phase === 'offline') { this.message = this.phase === 'offline' ? 'Saving locally…' : 'Saving…'; this.emit(); }
   }
@@ -227,9 +230,9 @@ export class PlainTextProvider {
       if (event.type === 'WELCOME') {
         if (this.phase !== 'connecting' || event.workspaceId !== this.workspaceId) throw new Error('Unexpected workspace');
         if (event.userId !== this.userId) { this.fail('The active account changed. Copy your local draft before leaving.'); return; }
-        this.send({ type: 'JOIN', version: 1, documentId: this.documentId });
+        this.send({ type: 'JOIN', version: 1, documentId: this.documentId, format: this.format });
       } else if (event.type === 'JOINED') {
-        if (this.phase !== 'connecting' || event.documentId !== this.documentId) throw new Error('Unexpected document');
+        if (this.phase !== 'connecting' || event.documentId !== this.documentId || event.format !== this.format) throw new Error('Unexpected document or format');
         clearTimeout(this.connectionTimer);
         this.requestSync();
       } else if (event.type === 'HEAD') {
@@ -264,7 +267,8 @@ export class PlainTextProvider {
         // Lesson 20's transient messages are not document changes.
       } else if (event.type === 'REJECTED') {
         if (event.code === 'ENGINE_UNAVAILABLE' || event.code === 'RETRY_HEAD_CHANGED') { this.goOffline(); return; }
-        if (event.code === 'EPOCH_CHANGED') this.fail('The document version changed. Your local draft remains on this device; copy it before leaving.');
+        if (event.code === 'DOCUMENT_LIMIT') this.fail('This document has reached a server limit. Your local draft was not saved to the server; copy it before leaving.');
+        else if (event.code === 'EPOCH_CHANGED' || event.code === 'SCHEMA_UNSUPPORTED') this.fail('The document version changed or its format is unsupported. Your local draft remains on this device; copy it before leaving.');
         else if (event.code === 'ACCESS_DENIED' || event.code === 'NOT_FOUND' || event.code === 'DOCUMENT_ARCHIVED')
           this.fail('The server rejected access or the document is unavailable. Your local draft remains on this device.');
         else this.fail('The server rejected the update. Your local draft remains on this device; copy it before leaving.');
@@ -292,9 +296,11 @@ export class PlainTextProvider {
       try { this.socket.close(); } catch { /* Connection already closed. */ }
     }
   }
-  private emit(): void { if (!this.disposed) this.changed({ phase: this.phase, text: this.text.toString(), pending: this.pending.length, message: this.message }); }
+  /** Bind an editor only after this provider has restored and synchronized the document. */
+  get sharedDocument(): Y.Doc { return this.doc; }
+  private emit(): void { if (!this.disposed) this.changed({ phase: this.phase, text: this.text?.toString() ?? '', pending: this.pending.length, message: this.message, hasLocalState: this.hasLocalState }); }
   destroy(): void {
-    this.disposed = true; this.identityAbort?.abort(); clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer); clearTimeout(this.retryTimer); window.removeEventListener('online', this.onOnline); window.removeEventListener('offline', this.onOffline); this.text.unobserve(this.onText); this.doc.off('update', this.onUpdate);
+    this.disposed = true; this.identityAbort?.abort(); clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer); clearTimeout(this.retryTimer); window.removeEventListener('online', this.onOnline); window.removeEventListener('offline', this.onOffline); this.text?.unobserve(this.onText); this.doc.off('update', this.onUpdate);
     this.doc.destroy(); this.socket?.close();
     if (this.store) void this.store.close().catch(() => {});
   }

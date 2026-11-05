@@ -11,11 +11,15 @@ export class LocalDocumentStore {
   private tail: Promise<void> = Promise.resolve();
   private constructor(private readonly db: IDBDatabase, private readonly key: string, private readonly releaseLock: () => Promise<void>) {}
 
-  static async open(userId: string, workspaceId: string, documentId: string, epoch: number): Promise<LocalDocumentStore> {
-    if (![userId, workspaceId, documentId].every(value => UUID.test(value)) || !Number.isSafeInteger(epoch) || epoch < 0)
+  static async open(userId: string, workspaceId: string, documentId: string, epoch: number,
+                    format: 'PLAIN_TEXT_V1' | 'RICH_TEXT_V1' = 'PLAIN_TEXT_V1'): Promise<LocalDocumentStore> {
+    if (![userId, workspaceId, documentId].every(value => UUID.test(value)) || !Number.isSafeInteger(epoch) || epoch < 0 ||
+        (format !== 'PLAIN_TEXT_V1' && format !== 'RICH_TEXT_V1'))
       throw new Error('Invalid local document identity');
     if (!navigator.locks || !globalThis.indexedDB) throw new Error('Safe local storage is unavailable');
-    const key = JSON.stringify([userId.toLowerCase(), workspaceId.toLowerCase(), documentId.toLowerCase(), epoch]);
+    const identity = [userId.toLowerCase(), workspaceId.toLowerCase(), documentId.toLowerCase(), epoch];
+    // Preserve existing plain-text keys; rich drafts have a distinct namespace.
+    const key = JSON.stringify(format === 'PLAIN_TEXT_V1' ? identity : [...identity, format]);
     let release!: () => void;
     let acquired!: (value: boolean) => void;
     const acquiredPromise = new Promise<boolean>(resolve => { acquired = resolve; });

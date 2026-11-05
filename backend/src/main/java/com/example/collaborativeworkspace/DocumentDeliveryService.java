@@ -19,15 +19,17 @@ public class DocumentDeliveryService {
     private final DocumentUpdateRepository updates;
     private final DocumentRoomHub rooms;
     private final JsonMapper json;
+    private final CollaborationFormatPolicy formats;
 
-    public DocumentDeliveryService(DocumentUpdateRepository updates, DocumentRoomHub rooms, JsonMapper json) {
-        this.updates = updates; this.rooms = rooms; this.json = json;
+    public DocumentDeliveryService(DocumentUpdateRepository updates, DocumentRoomHub rooms, JsonMapper json, CollaborationFormatPolicy formats) {
+        this.updates = updates; this.rooms = rooms; this.json = json; this.formats = formats;
     }
 
     /** A page is a consistent database snapshot; the client tracks the last contiguous applied sequence. */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public String sync(UUID workspace, UUID document, UUID user, long epoch, long after) {
         var head = updates.findAccessible(workspace, document, user).orElseThrow(() -> new DocumentUpdateException("NOT_FOUND"));
+        if (!formats.supports(head.collaborationFormat())) throw new DocumentUpdateException("SCHEMA_UNSUPPORTED");
         if (epoch != head.epoch()) throw new DocumentUpdateException("EPOCH_CHANGED");
         if (after < 0 || after > head.sequence()) throw new DocumentUpdateException("INVALID_CURSOR");
         List<DocumentUpdateRepository.Update> rows = updates.findAfter(document, epoch, after, head.sequence(), MAX_UPDATES + 1);

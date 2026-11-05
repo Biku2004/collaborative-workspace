@@ -5,8 +5,9 @@ import contract from '@workspace/rich-text-schema-v1/contract.json' with { type:
 import * as Y from 'yjs';
 import * as decoding from 'lib0/decoding';
 import { InputError, LIMITS } from './protocol.js';
+import { requirePositionMetadataPreserved, snapshotPositionMetadata, validatePositionMetadata } from './positionMetadata.js';
 
-// Experimental v2 candidate path; the Java application does not use it yet.
+// Versioned rich-text candidates are validated before a document update is committed.
 const schema = getSchema([StarterKit.configure(contract.starterKit as Partial<StarterKitOptions>)]);
 const allowedNodes = new Set(['paragraph', 'heading', 'bulletList', 'orderedList', 'listItem']);
 const allowedMarks = new Set(['bold', 'italic']);
@@ -18,18 +19,28 @@ function emptyObject(value: unknown): boolean {
   return (prototype === Object.prototype || prototype === null) && Object.keys(value).length === 0;
 }
 
-export function reconstructRichCandidate(updates: readonly Uint8Array[]) {
+export function reconstructRichCandidate(updates: readonly Uint8Array[], commit = false) {
+  if (commit && updates.length !== 2) throw new InputError('INVALID_REQUEST');
   const doc = new Y.Doc();
   try {
-    try {
-      for (const update of updates) {
+    let previousMetadata: Map<string, string> | undefined;
+    for (let index = 0; index < updates.length; index++) {
+      try {
+        const update = updates[index]!;
         const decoder = decoding.createDecoder(update);
         Y.readUpdate(decoder, doc, null);
         if (decoding.hasContent(decoder)) throw new InputError('INVALID_UPDATE');
+      } catch { throw new InputError('INVALID_UPDATE'); }
+      if (commit && index === 0) {
+        if (doc.store.pendingStructs != null || doc.store.pendingDs != null) throw new InputError('MISSING_DEPENDENCY');
+        previousMetadata = snapshotPositionMetadata(doc, contract.root);
       }
-    } catch { throw new InputError('INVALID_UPDATE'); }
+    }
     if (doc.store.pendingStructs != null || doc.store.pendingDs != null) throw new InputError('MISSING_DEPENDENCY');
-    if ([...doc.share.keys()].some(key => key !== contract.root)) throw new InputError('UNSUPPORTED_DOCUMENT');
+    const metadataKey = `__tiptap_position_migrations:root:${contract.root}`;
+    if ([...doc.share.keys()].some(key => key !== contract.root && key !== metadataKey)) throw new InputError('UNSUPPORTED_DOCUMENT');
+    validatePositionMetadata(doc, contract.root);
+    if (previousMetadata) requirePositionMetadataPreserved(previousMetadata, snapshotPositionMetadata(doc, contract.root));
     const root = doc.getXmlFragment(contract.root);
     if (root._map.size !== 0) throw new InputError('UNSUPPORTED_DOCUMENT');
     let count = 0, textUnits = 0;
@@ -58,8 +69,11 @@ export function reconstructRichCandidate(updates: readonly Uint8Array[]) {
     }
     for (const child of root.toArray()) visit(child, 1);
     const checkpoint = Y.encodeStateAsUpdate(doc);
-    if (checkpoint.byteLength > LIMITS.updateBytes) throw new InputError('TOO_LARGE');
-    if (root.length === 0) return { initialized: false, checkpoint };
+    if (checkpoint.byteLength > LIMITS.richCheckpointBytes) throw new InputError('TOO_LARGE');
+    if (root.length === 0) {
+      if (commit) throw new InputError('UNSUPPORTED_DOCUMENT');
+      return { initialized: false, checkpoint };
+    }
     try {
       const parsed = schema.nodeFromJSON(yDocToProsemirrorJSON(doc, contract.root));
       parsed.check();

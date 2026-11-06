@@ -7,6 +7,7 @@ export type EditorState = { phase: Phase; text: string; pending: number; message
 type Pending = { id: string; payload: string };
 type UpdateEvent = { sequence: number; payload: string };
 export type CollaborationFormat = 'PLAIN_TEXT_V1' | 'RICH_TEXT_V1';
+export type Presence = { presenceId: string; userId: string; email: string; anchor: Y.RelativePosition; head: Y.RelativePosition; seen: number };
 const REMOTE = Symbol('remote-update');
 const MAX_PENDING = 32;
 const MAX_TEXT_BYTES = 4000;
@@ -56,6 +57,12 @@ export class DocumentProvider {
   private retryAttempt = 0;
   private checkingIdentity = false;
   private identityAbort?: AbortController;
+  private readonly presence = new Map<string, Presence>();
+  private readonly presenceListeners = new Set<(presence: Presence[]) => void>();
+  private localPresence?: { anchor: string; head: string };
+  private lastPresenceSent = 0;
+  private presenceTimer: ReturnType<typeof setInterval>;
+  private presenceSendTimer?: ReturnType<typeof setTimeout>;
 
   constructor(private readonly userId: string, private readonly workspaceId: string, private readonly documentId: string,
               private readonly changed: (state: EditorState) => void, private readonly format: CollaborationFormat = 'PLAIN_TEXT_V1') {
@@ -64,6 +71,7 @@ export class DocumentProvider {
     this.doc.on('update', this.onUpdate);
     window.addEventListener('online', this.onOnline);
     window.addEventListener('offline', this.onOffline);
+    this.presenceTimer = setInterval(() => { this.expirePresence(); this.sendPresence(); }, 5000);
     this.emit();
     // React can mount and immediately clean up an editor in development StrictMode.
     // Defer acquiring the cross-tab lock until that cleanup has had a chance to run.
@@ -230,7 +238,7 @@ export class DocumentProvider {
       if (event.type === 'WELCOME') {
         if (this.phase !== 'connecting' || event.workspaceId !== this.workspaceId) throw new Error('Unexpected workspace');
         if (event.userId !== this.userId) { this.fail('The active account changed. Copy your local draft before leaving.'); return; }
-        this.send({ type: 'JOIN', version: 1, documentId: this.documentId, format: this.format });
+        this.send({ type: 'JOIN', version: 1, documentId: this.documentId, format: this.format, presence: true });
       } else if (event.type === 'JOINED') {
         if (this.phase !== 'connecting' || event.documentId !== this.documentId || event.format !== this.format) throw new Error('Unexpected document or format');
         clearTimeout(this.connectionTimer);
@@ -263,6 +271,8 @@ export class DocumentProvider {
         this.message = this.pending.length ? 'Saving…' : 'Confirming local state…'; this.emit();
         const acknowledgedSocket = this.socket;
         this.persist(() => { if (this.socket === acknowledgedSocket) { this.inFlight = false; this.message = this.pending.length ? 'Saving…' : 'Saved'; this.emit(); } });
+      } else if ((event.type === 'PRESENCE' || event.type === 'PRESENCE_LEFT') && event.documentId === this.documentId) {
+        this.receivePresence(event);
       } else if (event.type === 'TEST_MESSAGE' && event.documentId === this.documentId) {
         // Lesson 20's transient messages are not document changes.
       } else if (event.type === 'REJECTED') {
@@ -281,6 +291,7 @@ export class DocumentProvider {
     if (this.disposed || this.phase === 'failed') return;
     clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer);
     this.inFlight = false; this.requestedAfter = null;
+    this.clearPresence();
     const previous = this.socket; this.socket = undefined;
     this.phase = this.store && this.hasLocalState ? 'offline' : 'waiting';
     this.message = this.phase === 'offline' ? 'Offline; changes are pending server confirmation' : 'Waiting for the first complete synchronization…';
@@ -292,15 +303,62 @@ export class DocumentProvider {
     if (this.disposed || this.phase === 'failed') return;
     clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer); clearTimeout(this.retryTimer);
     this.phase = 'failed'; this.message = message; this.emit();
+    this.clearPresence();
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
       try { this.socket.close(); } catch { /* Connection already closed. */ }
     }
   }
   /** Bind an editor only after this provider has restored and synchronized the document. */
   get sharedDocument(): Y.Doc { return this.doc; }
+  observePresence(listener: (presence: Presence[]) => void): () => void {
+    this.presenceListeners.add(listener); listener([...this.presence.values()]);
+    return () => { this.presenceListeners.delete(listener); };
+  }
+  getPresence(): Presence[] { return [...this.presence.values()]; }
+  setPresence(anchor: Y.RelativePosition, head: Y.RelativePosition): void {
+    const next = { anchor: encode(Y.encodeRelativePosition(anchor)), head: encode(Y.encodeRelativePosition(head)) };
+    if (this.localPresence?.anchor === next.anchor && this.localPresence.head === next.head) return;
+    this.localPresence = next;
+    this.sendPresence();
+    clearTimeout(this.presenceSendTimer);
+    this.presenceSendTimer = setTimeout(() => this.sendPresence(), 160);
+  }
+  private sendPresence(): void {
+    const now = performance.now();
+    if (this.phase !== 'ready' || !this.localPresence || now - this.lastPresenceSent < 150 || !this.socket ||
+        this.socket.readyState !== WebSocket.OPEN || this.socket.bufferedAmount > 16384) return;
+    try { this.socket.send(JSON.stringify({ type: 'PRESENCE', version: 1, ...this.localPresence })); this.lastPresenceSent = now; }
+    catch { /* Presence is disposable; the normal connection lifecycle handles failures. */ }
+  }
+  private receivePresence(event: Record<string, unknown>): void {
+    // Presence is untrusted ephemeral input. A bad cursor must never break document synchronization.
+    try {
+      const id = event.presenceId, user = event.userId, email = event.email;
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+      if (typeof id !== 'string' || !uuid.test(id)) return;
+      if (event.type === 'PRESENCE_LEFT') { if (this.presence.delete(id)) this.emitPresence(); return; }
+      if (typeof user !== 'string' || !uuid.test(user) || typeof email !== 'string' || email.length < 1 || email.length > 254 || (!this.presence.has(id) && this.presence.size >= 256)) return;
+      const position = (value: unknown) => {
+        if (typeof value !== 'string' || value.length > 172) throw new Error('Invalid position');
+        const raw = atob(value);
+        if (!raw.length || raw.length > 128 || btoa(raw) !== value) throw new Error('Invalid position');
+        return Y.decodeRelativePosition(Uint8Array.from(raw, char => char.charCodeAt(0)));
+      };
+      this.presence.set(id, { presenceId: id, userId: user, email, anchor: position(event.anchor), head: position(event.head), seen: performance.now() });
+      this.emitPresence();
+    } catch { /* Ignore invalid or unresolvable positions from another client. */ }
+  }
+  private expirePresence(): void {
+    const cutoff = performance.now() - 15000;
+    let changed = false;
+    for (const [id, entry] of this.presence) if (entry.seen <= cutoff) { this.presence.delete(id); changed = true; }
+    if (changed) this.emitPresence();
+  }
+  private clearPresence(): void { if (this.presence.size) { this.presence.clear(); this.emitPresence(); } }
+  private emitPresence(): void { const snapshot = [...this.presence.values()]; for (const listener of this.presenceListeners) listener(snapshot); }
   private emit(): void { if (!this.disposed) this.changed({ phase: this.phase, text: this.text?.toString() ?? '', pending: this.pending.length, message: this.message, hasLocalState: this.hasLocalState }); }
   destroy(): void {
-    this.disposed = true; this.identityAbort?.abort(); clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer); clearTimeout(this.retryTimer); window.removeEventListener('online', this.onOnline); window.removeEventListener('offline', this.onOffline); this.text?.unobserve(this.onText); this.doc.off('update', this.onUpdate);
+    this.disposed = true; this.identityAbort?.abort(); clearInterval(this.presenceTimer); clearTimeout(this.presenceSendTimer); clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer); clearTimeout(this.retryTimer); window.removeEventListener('online', this.onOnline); window.removeEventListener('offline', this.onOffline); this.text?.unobserve(this.onText); this.doc.off('update', this.onUpdate);
     this.doc.destroy(); this.socket?.close();
     if (this.store) void this.store.close().catch(() => {});
   }

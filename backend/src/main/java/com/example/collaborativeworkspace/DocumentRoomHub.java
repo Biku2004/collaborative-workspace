@@ -23,20 +23,28 @@ public class DocumentRoomHub {
             task -> { Thread thread = new Thread(task, "room-sender"); thread.setDaemon(true); return thread; }, new ThreadPoolExecutor.AbortPolicy());
     private final DocumentRepository documents;
     private final WorkspaceRepository workspaces;
-    public DocumentRoomHub(DocumentRepository documents, WorkspaceRepository workspaces) { this.documents = documents; this.workspaces = workspaces; }
+    private final tools.jackson.databind.json.JsonMapper json;
+    public DocumentRoomHub(DocumentRepository documents, WorkspaceRepository workspaces, tools.jackson.databind.json.JsonMapper json) { this.documents = documents; this.workspaces = workspaces; this.json = json; }
 
     final class Peer {
         final WebSocketSession socket;
         final UUID workspace, user;
+        final String userEmail;
+        final UUID presenceId = UUID.randomUUID();
         final HttpSession http;
         final BoundedSocketSender sender;
         volatile UUID document;
         volatile boolean welcomed;
         volatile boolean roomReady;
+        volatile boolean presenceEnabled;
+        volatile boolean hasPresence;
+        private long presenceWindowNanos;
+        private int presenceCount;
         Peer(WebSocketSession socket) {
             this.socket = socket;
             workspace = UUID.fromString((String) socket.getAttributes().get("workspaceId"));
             user = UUID.fromString((String) socket.getAttributes().get("userId"));
+            userEmail = (String) socket.getAttributes().get("userEmail");
             http = (HttpSession) socket.getAttributes().get("httpSession");
             sender = new BoundedSocketSender(socket, executor, () -> remove(socket));
         }
@@ -45,6 +53,12 @@ public class DocumentRoomHub {
             catch (IllegalStateException ex) { return false; }
         }
         boolean workspaceAllowed() { return sessionValid() && workspaces.memberRole(workspace, user).isPresent(); }
+        synchronized boolean allowPresence(long now) {
+            if (presenceWindowNanos == 0 || now - presenceWindowNanos >= TimeUnit.SECONDS.toNanos(1)) {
+                presenceWindowNanos = now; presenceCount = 0;
+            }
+            return ++presenceCount <= 10;
+        }
         boolean allowed(UUID id) { return sessionValid() && documents.canRead(workspace, id, user); }
         java.util.Optional<String> readableFormat(UUID id) {
             if (!sessionValid()) return java.util.Optional.empty();
@@ -61,7 +75,21 @@ public class DocumentRoomHub {
     Peer get(WebSocketSession socket) { return peers.get(socket.getId()); }
     void remove(WebSocketSession socket) {
         Peer peer = peers.remove(socket.getId());
-        if (peer != null) { count.decrementAndGet(); peer.sender.close(CloseStatus.NORMAL); }
+        if (peer != null) { count.decrementAndGet(); clearPresence(peer); peer.sender.close(CloseStatus.NORMAL); }
+    }
+    void clearPresence(Peer peer) {
+        UUID document = peer.document;
+        if (document == null || !peer.roomReady || !peer.hasPresence) return;
+        peer.hasPresence = false;
+        String value = json.writeValueAsString(java.util.Map.of("type", "PRESENCE_LEFT", "version", 1,
+                "documentId", document, "presenceId", peer.presenceId));
+        broadcastPresence(peer, document, value);
+    }
+    void broadcastPresence(Peer sender, UUID document, String value) {
+        for (Peer target : peers.values()) {
+            if (target != sender && target.roomReady && target.presenceEnabled && sender.workspace.equals(target.workspace) && document.equals(target.document))
+                target.sender.sendEphemeral(value, () -> document.equals(target.document) && target.allowed(document));
+        }
     }
     void broadcast(Peer sender, UUID document, String json) {
         for (Peer target : peers.values()) {

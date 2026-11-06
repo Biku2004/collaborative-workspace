@@ -108,3 +108,8 @@ time { margin-left: auto; color: #8c9b90; font-size: 12px; white-space: nowrap; 
   .documents { padding: 28px 24px; }
   .footer { font-size: 8px; }
 }
+.remote-selection { background: rgba(76, 114, 188, .22); }
+.remote-cursor { border-left: 2px solid #4169aa; position: relative; pointer-events: none; }
+.remote-cursor::after { content: attr(data-label); position: absolute; left: -2px; bottom: 100%; background: #4169aa; color: white; font: 10px sans-serif; padding: 2px 4px; white-space: nowrap; }
+.collaborators { font-size: .8rem; margin: .5rem 0; }
+.collaborators ul { display: flex; flex-wrap: wrap; gap: .5rem 1rem; padding: 0; list-style: none; }

@@ -110,7 +110,10 @@ class BrowserWorkspaceIntegrationTest {
                 Thread.sleep(50);
             }
             assertTrue(ready, () -> "Vite failed to start:\n" + safeRead(viteLog));
-            var runner = new ProcessBuilder("node", "node_modules/@playwright/test/cli.js", "test", "a-reconnect.spec.ts", "a-rich-integration.spec.ts", "workspace.spec.ts", "editor.spec.ts", "local-document-store.spec.ts", "partial-sync.spec.ts", "rich-surface.spec.ts", "--reporter=line")
+            var browserArgs = new java.util.ArrayList<>(java.util.List.of("node", "node_modules/@playwright/test/cli.js", "test", "a-reconnect.spec.ts", "a-rich-integration.spec.ts", "workspace.spec.ts", "editor.spec.ts", "local-document-store.spec.ts", "partial-sync.spec.ts", "rich-surface.spec.ts", "--reporter=line"));
+            String browserGrep = System.getenv("WORKSPACE_BROWSER_TEST_GREP");
+            if (browserGrep != null && !browserGrep.isBlank()) { browserArgs.add("--grep"); browserArgs.add(browserGrep); }
+            var runner = new ProcessBuilder(browserArgs)
                     .directory(frontend.toFile()).redirectErrorStream(true).redirectOutput(browserLog.toFile());
             var env = runner.environment();
             env.put("WORKSPACE_E2E_ORIGIN", "http://127.0.0.1:" + frontendPort);
@@ -123,7 +126,7 @@ class BrowserWorkspaceIntegrationTest {
             Path chrome = Path.of("C:/Program Files/Google/Chrome/Application/chrome.exe");
             if (Files.isRegularFile(chrome)) env.putIfAbsent("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", chrome.toString());
             browser = runner.start();
-            assertTrue(browser.waitFor(180, TimeUnit.SECONDS), "Browser verification timed out");
+            assertTrue(browser.waitFor(360, TimeUnit.SECONDS), "Browser verification timed out");
             assertEquals(0, browser.exitValue(), () -> "Browser verification failed:\n" + safeRead(browserLog));
             safeRead(browserLog).lines().filter(line -> line.startsWith("STRUCTURAL_EDIT_MEASUREMENT ")).forEach(System.out::println);
             if (engine != null) {

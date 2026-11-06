@@ -10,6 +10,29 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.WebSocketSession;
 
 class BoundedSocketSenderTest {
+    @Test void disposablePresenceIsBoundedAndEvictedForDurableMessages() throws Exception {
+        var socket = mock(WebSocketSession.class); when(socket.isOpen()).thenReturn(true);
+        var started = new CountDownLatch(1); var release = new CountDownLatch(1);
+        doAnswer(invocation -> { started.countDown(); release.await(5, TimeUnit.SECONDS); return null; }).when(socket).sendMessage(any());
+        var executor = Executors.newSingleThreadExecutor();
+        try {
+            var sender = new BoundedSocketSender(socket, executor, () -> {});
+            sender.send("first", () -> true); assertTrue(started.await(5, TimeUnit.SECONDS));
+            for (int i = 0; i < 20; i++) sender.sendEphemeral("presence", () -> true);
+            assertEquals(4, sender.queuedMessages());
+            for (int i = 0; i < 13; i++) sender.send("durable", () -> true);
+            assertEquals(13, sender.queuedMessages());
+            verify(socket, never()).close(any());
+        } finally { release.countDown(); executor.shutdownNow(); executor.awaitTermination(5, TimeUnit.SECONDS); }
+    }
+
+    @Test void rejectedExecutorDropsDisposablePresenceWithoutClosing() throws Exception {
+        var socket = mock(WebSocketSession.class); when(socket.isOpen()).thenReturn(true);
+        var sender = new BoundedSocketSender(socket, task -> { throw new java.util.concurrent.RejectedExecutionException(); }, () -> {});
+        sender.sendEphemeral("presence", () -> true);
+        assertEquals(0, sender.queuedMessages());
+        verify(socket, never()).close(any());
+    }
     @Test void slowSocketCannotAccumulateAnUnboundedQueue() throws Exception {
         WebSocketSession socket = mock(WebSocketSession.class);
         when(socket.isOpen()).thenReturn(true);

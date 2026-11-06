@@ -4,18 +4,20 @@ import Collaboration from '@tiptap/extension-collaboration';
 import StarterKit, { type StarterKitOptions } from '@tiptap/starter-kit';
 import contract from '@workspace/rich-text-schema-v1/contract.json';
 import type * as Y from 'yjs';
+import { richPresence } from './richPresence';
+import type { DocumentProvider } from './provider';
 
-type Props = { document: Y.Doc; readOnly: boolean };
+type Props = { document: Y.Doc; readOnly: boolean; provider?: DocumentProvider };
 const attributes = (readOnly: boolean) => ({ role: 'textbox', 'aria-label': 'Document text', 'aria-multiline': 'true', 'aria-readonly': String(readOnly) });
 
 /** The caller must supply a synchronized, initialized document of the negotiated schema. */
-export default function RichTextSurface({ document, readOnly }: Props) {
+export default function RichTextSurface({ document, readOnly, provider }: Props) {
   const editor = useEditor({
     extensions: [StarterKit.configure(contract.starterKit as Partial<StarterKitOptions>),
-      Collaboration.configure({ document, field: contract.root })],
+      Collaboration.configure({ document, field: contract.root }), ...(provider ? [richPresence(provider)] : [])],
     editable: !readOnly,
     editorProps: { attributes: attributes(readOnly) },
-  }, [document]);
+  }, [document, provider]);
   const active = useEditorState({ editor, selector: ({ editor: instance }) => instance ? {
     bold: instance.isActive('bold'), italic: instance.isActive('italic'),
     heading1: instance.isActive('heading', { level: 1 }), heading2: instance.isActive('heading', { level: 2 }),

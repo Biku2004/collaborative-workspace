@@ -48,7 +48,9 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
                 if (!type.equals("HELLO") || root.size() != 2 || !peer.workspaceAllowed()) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
                 peer.welcomed = true;
                 peer.sender.send(json.writeValueAsString(Map.of("type", "WELCOME", "version", 1, "workspaceId", peer.workspace, "userId", peer.user)), peer::workspaceAllowed);
-            } else if (type.equals("JOIN") && (root.size() == 3 || (root.size() == 4 && root.path("format").isTextual())) && root.path("documentId").isTextual() && peer.document == null) {
+            } else if (type.equals("JOIN") && (root.size() == 3 || (root.size() == 4 && root.path("format").isTextual())
+                    || (root.size() == 5 && root.path("format").isTextual() && root.path("presence").isBoolean() && root.path("presence").booleanValue()))
+                    && root.path("documentId").isTextual() && peer.document == null) {
                 java.util.UUID document;
                 try { document = java.util.UUID.fromString(root.path("documentId").asText()); }
                 catch (IllegalArgumentException ex) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
@@ -60,13 +62,16 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
                     return;
                 }
                 peer.document = document;
+                peer.presenceEnabled = root.size() == 5;
                 peer.sender.send(json.writeValueAsString(Map.of("type", "JOINED", "version", 1, "documentId", document, "format", format.get())), () -> document.equals(peer.document) && peer.allowed(document));
                 peer.roomReady = true;
             } else if (type.equals("LEAVE") && root.size() == 2 && peer.document != null) {
                 java.util.UUID document = peer.document;
                 if (!peer.allowed(document)) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
+                rooms.clearPresence(peer);
                 peer.roomReady = false;
                 peer.document = null;
+                peer.presenceEnabled = false;
                 peer.sender.send(json.writeValueAsString(Map.of("type", "LEFT", "version", 1, "documentId", document)), peer::workspaceAllowed);
             } else if (type.equals("SYNC") && root.size() == 4 && peer.document != null && root.path("epoch").isIntegralNumber()
                     && root.path("epoch").canConvertToLong() && root.path("epoch").longValue() >= 0 && root.path("after").isIntegralNumber()
@@ -105,6 +110,19 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
                     org.slf4j.LoggerFactory.getLogger(getClass()).error("Document update failed: {}", ex.getClass().getName());
                     peer.sender.close(CloseStatus.SERVER_ERROR);
                 }
+            } else if (type.equals("PRESENCE") && root.size() == 4 && root.path("anchor").isTextual()
+                    && root.path("head").isTextual() && peer.document != null && peer.roomReady && peer.presenceEnabled) {
+                var document = peer.document;
+                String anchor = root.path("anchor").asText(), head = root.path("head").asText();
+                if (!validPosition(anchor) || !validPosition(head)) {
+                    peer.sender.close(CloseStatus.POLICY_VIOLATION); return;
+                }
+                if (peer.allowPresence(System.nanoTime())) {
+                    if (!peer.allowed(document)) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
+                    peer.hasPresence = true;
+                    rooms.broadcastPresence(peer, document, json.writeValueAsString(Map.of("type", "PRESENCE", "version", 1,
+                            "documentId", document, "presenceId", peer.presenceId, "userId", peer.user, "email", peer.userEmail, "anchor", anchor, "head", head)));
+                }
             } else if (type.equals("TEST_MESSAGE") && root.size() == 3 && root.path("message").isTextual() && peer.document != null) {
                 String body = root.path("message").asText();
                 java.util.UUID document = peer.document;
@@ -115,6 +133,14 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
                         "documentId", document, "userId", peer.user, "message", body)));
             } else { peer.sender.close(CloseStatus.POLICY_VIOLATION); }
         } catch (tools.jackson.core.JacksonException ex) { socket.close(CloseStatus.BAD_DATA); return; }
+    }
+
+    private static boolean validPosition(String value) {
+        if (value.isEmpty() || value.length() > 172) return false;
+        try {
+            byte[] decoded = java.util.Base64.getDecoder().decode(value);
+            return decoded.length > 0 && decoded.length <= 128 && java.util.Base64.getEncoder().encodeToString(decoded).equals(value);
+        } catch (IllegalArgumentException ex) { return false; }
     }
 
     @Override protected void handleBinaryMessage(WebSocketSession socket, BinaryMessage message) throws IOException { socket.close(CloseStatus.NOT_ACCEPTABLE); }

@@ -12,7 +12,7 @@ import org.springframework.web.socket.WebSocketSession;
 /** A single ordered sender per socket. Limits include queued messages, plus at most one in-flight message. */
 final class BoundedSocketSender {
     static final int MAX_MESSAGES = 16, MAX_BYTES = 16384;
-    private record Pending(TextMessage message, BooleanSupplier allowed) {}
+    private record Pending(TextMessage message, BooleanSupplier allowed, boolean ephemeral) {}
     private final WebSocketSession socket;
     private final Executor executor;
     private final Runnable cleanup;
@@ -25,17 +25,40 @@ final class BoundedSocketSender {
     }
 
     void send(String value, BooleanSupplier allowed) {
+        enqueue(value, allowed, false);
+    }
+
+    /** Presence is disposable: a slow peer must not lose its durable-edit connection for it. */
+    void sendEphemeral(String value, BooleanSupplier allowed) {
+        enqueue(value, allowed, true);
+    }
+
+    private void enqueue(String value, BooleanSupplier allowed, boolean ephemeral) {
         TextMessage message = new TextMessage(value);
         boolean fail = false;
         synchronized (this) {
             if (closed) return;
-            if (queue.size() >= MAX_MESSAGES || bytes + message.getPayloadLength() > MAX_BYTES) fail = true;
+            if (!ephemeral && (queue.size() >= MAX_MESSAGES || bytes + message.getPayloadLength() > MAX_BYTES)) {
+                var iterator = queue.iterator();
+                while (iterator.hasNext()) {
+                    var item = iterator.next();
+                    if (item.ephemeral()) { bytes -= item.message().getPayloadLength(); iterator.remove(); }
+                }
+            }
+            if (ephemeral && queue.stream().filter(Pending::ephemeral).count() >= 4) return;
+            if (queue.size() >= MAX_MESSAGES || bytes + message.getPayloadLength() > MAX_BYTES) {
+                if (ephemeral) return;
+                fail = true;
+            }
             else {
-                queue.addLast(new Pending(message, allowed)); bytes += message.getPayloadLength();
+                queue.addLast(new Pending(message, allowed, ephemeral)); bytes += message.getPayloadLength();
                 if (!running) {
                     running = true;
                     try { executor.execute(this::drain); }
-                    catch (RejectedExecutionException ex) { fail = true; }
+                    catch (RejectedExecutionException ex) {
+                        if (ephemeral) { queue.removeLast(); bytes -= message.getPayloadLength(); running = false; }
+                        else fail = true;
+                    }
                 }
             }
         }

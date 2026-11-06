@@ -44,6 +44,7 @@ public class WorkspaceSocketHandshake implements HandshakeInterceptor {
         attributes.put("httpSessionId", session.getId());
         attributes.put("workspaceId", workspace.toString());
         attributes.put("userId", user.get().toString());
+        attributes.put("userEmail", authentication.getName());
         return true;
     }
     @Override public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response, WebSocketHandler handler, Exception exception) {}

@@ -2,6 +2,7 @@ import { expect, test, type BrowserContext } from '@playwright/test';
 
 test('independent offline insert and delete edits reconcile after automatic reconnect', async ({ browser, baseURL }) => {
   test.skip(process.env.WORKSPACE_E2E_EDITING !== 'true', 'Requires the real local Yjs engine');
+  test.setTimeout(90000);
   const alice = await browser.newContext({ baseURL });
   const bob = await browser.newContext({ baseURL });
   async function open(context: BrowserContext, email: string) {
@@ -28,13 +29,20 @@ test('independent offline insert and delete edits reconcile after automatic reco
     await page.getByRole('button', { name: new RegExp(process.env.WORKSPACE_E2E_SHARED_NAME!) }).click();
     await page.getByRole('button', { name: /Reconnect notes/ }).click();
     const editor = page.getByLabel('Document text');
-    await expect(editor).not.toHaveAttribute('readonly');
+    await expect(editor).not.toHaveAttribute('readonly', { timeout: 20000 });
     return { page, editor };
   }
   try {
     const [a, b] = await Promise.all([open(alice, process.env.WORKSPACE_E2E_ALICE!), open(bob, process.env.WORKSPACE_E2E_BOB!)]);
     await a.editor.fill('ABCDE');
     await expect(b.editor).toHaveValue('ABCDE', { timeout: 15000 });
+    await a.editor.focus();
+    await a.editor.press('Control+Home'); await a.editor.press('ArrowRight');
+    await a.editor.press('Shift+ArrowRight'); await a.editor.press('Shift+ArrowRight'); await a.editor.press('Shift+ArrowRight');
+    await expect(b.page.getByLabel('Collaborators')).toContainText(`${process.env.WORKSPACE_E2E_ALICE_ID!})`, { timeout: 15000 });
+    await expect(b.page.getByLabel('Collaborators')).toContainText('selection 1–4', { timeout: 15000 });
+    await a.editor.press('Control+Home'); await a.editor.press('ArrowRight'); await a.editor.press('ArrowRight');
+    await expect(b.page.getByLabel('Collaborators')).toContainText('cursor at 2', { timeout: 15000 });
     await expect(a.page.locator('.editor-status')).toHaveText(/Saved|Up to date/, { timeout: 15000 });
     await Promise.all([alice.setOffline(true), bob.setOffline(true)]);
     await Promise.all([a.page.evaluate(() => (window as unknown as Window & { disconnectDocument: () => void }).disconnectDocument()),

@@ -416,6 +416,50 @@ class WorkspaceSocketIntegrationTest {
             }
         }
     }
+    @Test void presenceUsesAuthenticatedIdentityAndStaysInsideItsDocument() throws Exception {
+        UUID ownerId = UUID.randomUUID(), viewerId = UUID.randomUUID(), workspace = null;
+        String owner = "presence-owner-" + ownerId + "@example.com", viewer = "presence-viewer-" + viewerId + "@example.com";
+        String base = "http://127.0.0.1:" + port;
+        var sockets = new java.util.ArrayList<WebSocket>();
+        try {
+            users.create(ownerId, owner, encoder.encode("test-user-password"));
+            users.create(viewerId, viewer, encoder.encode("test-user-password"));
+            workspace = workspaces.create(owner, "presence workspace").id();
+            membership.setRole(workspace, owner, new ChangeWorkspaceMemberRequest(viewer, WorkspaceRole.VIEWER));
+            UUID doc = documents.create(workspace, owner, "presence").id(), other = documents.create(workspace, owner, "other").id();
+            HttpClient first = client(), second = client(), third = client();
+            login(first, base, owner); login(second, base, viewer); login(third, base, owner);
+            URI uri = URI.create("ws://127.0.0.1:" + port + "/api/workspaces/" + workspace + "/socket");
+            var a = new QueueListener(); var b = new QueueListener(); var c = new QueueListener(); var legacy = new QueueListener();
+            WebSocket sa = connectQueue(first, uri, a), sb = connectQueue(second, uri, b), sc = connectQueue(third, uri, c);
+            WebSocket old = connectQueue(third, uri, legacy);
+            sockets.addAll(java.util.List.of(sa, sb, sc, old));
+            joinPresence(sa, a, doc); joinPresence(sb, b, doc); joinPresence(sc, c, other);
+            join(old, legacy, doc);
+            sa.sendText("{\"type\":\"PRESENCE\",\"version\":1,\"anchor\":\"AA==\",\"head\":\"AQ==\"}", true).join();
+            String presence = b.messages.poll(5, TimeUnit.SECONDS);
+            assertNotNull(presence); assertTrue(presence.contains("\"userId\":\"" + ownerId + "\""));
+            var value = tools.jackson.databind.json.JsonMapper.builder().build().readTree(presence);
+            assertEquals(owner, value.path("email").asText());
+            String presenceId = value.path("presenceId").asText();
+            assertNotNull(UUID.fromString(presenceId));
+            assertNull(c.messages.poll(300, TimeUnit.MILLISECONDS));
+            assertNull(legacy.messages.poll(300, TimeUnit.MILLISECONDS));
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_updates WHERE document_id=?", Integer.class, doc));
+            sa.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
+            String left = b.messages.poll(5, TimeUnit.SECONDS);
+            assertNotNull(left); assertTrue(left.contains("\"type\":\"PRESENCE_LEFT\"")); assertTrue(left.contains(presenceId));
+            assertNull(legacy.messages.poll(300, TimeUnit.MILLISECONDS));
+            sb.sendText("{\"type\":\"PRESENCE\",\"version\":1,\"anchor\":\"AA==\",\"head\":\"AQ==\",\"userId\":\"" + ownerId + "\"}", true).join();
+            assertEquals(1008, b.closed.get(5, TimeUnit.SECONDS));
+        } finally {
+            for (WebSocket socket : sockets) socket.abort();
+            awaitEmpty();
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id = ?", workspace); jdbc.update("DELETE FROM workspaces WHERE id = ?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id IN (?, ?)", ownerId, viewerId);
+        }
+    }
+
     private static class QueueListener implements WebSocket.Listener {
         final java.util.concurrent.BlockingQueue<String> messages = new java.util.concurrent.LinkedBlockingQueue<>();
         final CompletableFuture<Integer> closed = new CompletableFuture<>();
@@ -432,6 +476,10 @@ class WorkspaceSocketIntegrationTest {
     }
     private void join(WebSocket socket, QueueListener listener, UUID document) throws Exception {
         socket.sendText("{\"type\":\"JOIN\",\"version\":1,\"documentId\":\"" + document + "\"}", true).join();
+        assertTrue(listener.messages.poll(5, TimeUnit.SECONDS).contains("\"type\":\"JOINED\""));
+    }
+    private void joinPresence(WebSocket socket, QueueListener listener, UUID document) throws Exception {
+        socket.sendText("{\"type\":\"JOIN\",\"version\":1,\"documentId\":\"" + document + "\",\"format\":\"PLAIN_TEXT_V1\",\"presence\":true}", true).join();
         assertTrue(listener.messages.poll(5, TimeUnit.SECONDS).contains("\"type\":\"JOINED\""));
     }
     private static class Listener implements WebSocket.Listener {

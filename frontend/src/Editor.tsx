@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { DocumentProvider, type CollaborationFormat, type EditorState } from './provider';
+import * as Y from 'yjs';
+import { DocumentProvider, type CollaborationFormat, type EditorState, type Presence } from './provider';
 import RichEditorBoundary from './RichEditorBoundary';
 const RichTextSurface = lazy(() => import('./RichTextSurface'));
 
@@ -9,20 +10,23 @@ const initial: EditorState = { phase: 'connecting', text: '', pending: 0, messag
 export default function Editor({ userId, workspaceId, documentId, title, format, readOnly, onDirty, onBack }: Props) {
   const [state, setState] = useState<EditorState>(initial);
   const [canRenderRich, setCanRenderRich] = useState(false);
+  const [presence, setPresence] = useState<Presence[]>([]);
   const provider = useRef<DocumentProvider | null>(null);
+  const plainEditor = useRef<HTMLTextAreaElement | null>(null);
   const dirty = state.pending > 0;
   const dirtyCallback = useRef(onDirty);
   dirtyCallback.current = onDirty;
 
   useEffect(() => {
-    setState(initial); setCanRenderRich(false);
+    setState(initial); setCanRenderRich(false); setPresence([]);
     const instance = new DocumentProvider(userId, workspaceId, documentId, next => {
       dirtyCallback.current(next.pending > 0);
       setState(next);
       if (next.phase === 'ready' || next.hasLocalState) setCanRenderRich(true);
     }, format);
     provider.current = instance;
-    return () => { provider.current = null; instance.destroy(); dirtyCallback.current(false); };
+    const unsubscribe = instance.observePresence(setPresence);
+    return () => { unsubscribe(); provider.current = null; instance.destroy(); dirtyCallback.current(false); };
   }, [userId, workspaceId, documentId, format]);
 
   useEffect(() => {
@@ -32,6 +36,13 @@ export default function Editor({ userId, workspaceId, documentId, title, format,
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
 
+  useEffect(() => {
+    const instance = provider.current, input = plainEditor.current;
+    if (format !== 'PLAIN_TEXT_V1' || state.phase !== 'ready' || !instance || !input) return;
+    const text = instance.sharedDocument.getText('content');
+    instance.setPresence(Y.createRelativePositionFromTypeIndex(text, input.selectionStart), Y.createRelativePositionFromTypeIndex(text, input.selectionEnd));
+  }, [format, state.phase]);
+
   return <section className="editor" aria-labelledby="editor-title">
     <button className="more" type="button" onClick={onBack}>← Back to documents</button>
     <div className="editor-heading"><div><p className="eyebrow">DOCUMENT / {format === 'RICH_TEXT_V1' ? 'RICH TEXT' : 'PLAIN TEXT'}</p><h2 id="editor-title">{title}</h2></div>
@@ -40,11 +51,27 @@ export default function Editor({ userId, workspaceId, documentId, title, format,
     {state.phase === 'offline' && <p className="alert" role="status">The service is unavailable or access could not be verified. Local changes remain on this device until the server accepts them. Browser storage can be cleared or evicted.</p>}
     {state.phase === 'waiting' && <p className="alert" role="status">A complete local copy is not available yet. The editor will retry the connection before enabling editing.</p>}
     {readOnly && <p className="muted small">You can view this document. An editor or owner can make changes.</p>}
-    {format === 'RICH_TEXT_V1' ? (canRenderRich && provider.current && <RichEditorBoundary><Suspense fallback={<p role="status">Loading editor…</p>}><RichTextSurface document={provider.current.sharedDocument}
+    {presence.length > 0 && <div className="collaborators" aria-label="Collaborators"><span>Collaborators</span><ul>{presence.map(peer => {
+      let location = '';
+      if (format === 'PLAIN_TEXT_V1' && provider.current) {
+        const doc = provider.current.sharedDocument;
+        try {
+          const anchor = Y.createAbsolutePositionFromRelativePosition(peer.anchor, doc), head = Y.createAbsolutePositionFromRelativePosition(peer.head, doc);
+          if (anchor?.type === doc.getText('content') && head?.type === anchor.type)
+            location = anchor.index === head.index ? `, cursor at ${head.index}` : `, selection ${anchor.index}–${head.index}`;
+        } catch { /* A position may refer to a document update not received yet. */ }
+      }
+      return <li key={peer.presenceId}>{peer.email} ({peer.userId}){location}</li>;
+    })}</ul></div>}
+    {format === 'RICH_TEXT_V1' ? (canRenderRich && provider.current && <RichEditorBoundary><Suspense fallback={<p role="status">Loading editor…</p>}><RichTextSurface document={provider.current.sharedDocument} provider={provider.current}
       readOnly={readOnly || (state.phase !== 'ready' && state.phase !== 'offline')} /></Suspense></RichEditorBoundary>) : <>
       <label htmlFor="editor-content" className="editor-label">Document text</label>
-      <textarea id="editor-content" value={state.text} readOnly={readOnly || (state.phase !== 'ready' && state.phase !== 'offline')}
-        onChange={event => provider.current?.setText(event.target.value)} aria-describedby="editor-help" /></>}
+      <textarea ref={plainEditor} id="editor-content" value={state.text} readOnly={readOnly || (state.phase !== 'ready' && state.phase !== 'offline')}
+        onChange={event => provider.current?.setText(event.target.value)} onSelect={event => {
+          const instance = provider.current; if (!instance) return;
+          const text = instance.sharedDocument.getText('content');
+          instance.setPresence(Y.createRelativePositionFromTypeIndex(text, event.currentTarget.selectionStart), Y.createRelativePositionFromTypeIndex(text, event.currentTarget.selectionEnd));
+        }} aria-describedby="editor-help" /></>}
     <p id="editor-help" className="muted small">Local changes are not saved on the server until confirmed. Browser storage is not private from other users of this browser profile.</p>
   </section>;
 }

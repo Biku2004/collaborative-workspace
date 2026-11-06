@@ -2,10 +2,25 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
 test('rich editors synchronize, recover offline edits, and enforce viewer writes', async ({ browser, baseURL }) => {
   test.skip(process.env.WORKSPACE_E2E_EDITING !== 'true', 'Requires the real local Yjs engine');
+  test.setTimeout(90000);
   const alice = await browser.newContext({ baseURL }), bob = await browser.newContext({ baseURL });
   const errors: string[] = [];
   let viewerRoleSet = false;
   let releaseList: (() => void) | undefined;
+  await bob.addInitScript(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(WebSocket.prototype, 'onmessage')!;
+    Object.defineProperty(WebSocket.prototype, 'onmessage', {
+      configurable: true, get: descriptor.get,
+      set(this: WebSocket, listener: ((event: MessageEvent) => void) | null) {
+        descriptor.set!.call(this, listener && function (this: WebSocket, event: MessageEvent) {
+          if ((window as unknown as { dropPresenceLeft?: boolean }).dropPresenceLeft && typeof event.data === 'string') {
+            try { if (JSON.parse(event.data).type === 'PRESENCE_LEFT') return; } catch { /* Normal handler validates it. */ }
+          }
+          listener.call(this, event);
+        });
+      },
+    });
+  });
   async function open(context: BrowserContext, email: string) {
     await context.addInitScript(() => {
       const original = WebSocket.prototype.send;
@@ -72,6 +87,11 @@ test('rich editors synchronize, recover offline edits, and enforce viewer writes
     const editorA = a.getByRole('textbox', { name: 'Document text' }), editorB = b.getByRole('textbox', { name: 'Document text' });
     await editorA.fill('Hello');
     await expect(editorB).toHaveText('Hello', { timeout: 15000 });
+    await editorA.focus(); await editorA.press('Home'); await editorA.press('Shift+ArrowRight');
+    await expect(editorB.locator(`[data-presence-user="${process.env.WORKSPACE_E2E_ALICE_ID!}"]`)).toBeAttached({ timeout: 15000 });
+    await expect(editorB.locator('.remote-selection')).toHaveText('H', { timeout: 15000 });
+    await editorB.focus(); await editorB.press('End');
+    await expect(editorA.locator(`[data-presence-user="${process.env.WORKSPACE_E2E_BOB_ID!}"]`)).toBeAttached({ timeout: 15000 });
     await editorA.press('Control+A'); await a.getByRole('button', { name: 'Bold', exact: true }).click();
     await expect(editorB.locator('strong')).toHaveText('Hello', { timeout: 15000 });
     await a.getByRole('button', { name: 'Bullet list', exact: true }).click();
@@ -83,6 +103,19 @@ test('rich editors synchronize, recover offline edits, and enforce viewer writes
     await a.getByRole('button', { name: 'Heading 2', exact: true }).click();
     await expect(editorB.locator('h2')).toHaveText('Hello', { timeout: 15000 });
     await expect(a.locator('.editor-status')).toHaveText(/Saved|Up to date/, { timeout: 15000 });
+    await b.evaluate(() => { (window as unknown as { dropPresenceLeft: boolean }).dropPresenceLeft = true; });
+    await alice.setOffline(true);
+    await a.evaluate(() => (window as unknown as Window & { disconnectDocument: () => void }).disconnectDocument());
+    await expect(b.getByLabel('Collaborators')).toContainText(process.env.WORKSPACE_E2E_ALICE_ID!);
+    await b.evaluate(() => {
+      const monotonic = performance.now.bind(performance), wall = Date.now;
+      Date.now = () => wall() - 3600000; // A backward wall-clock change must not postpone expiry.
+      Object.defineProperty(performance, 'now', { configurable: true, value: () => monotonic() + 25000 });
+    });
+    await expect(b.getByLabel('Collaborators')).toHaveCount(0, { timeout: 10000 });
+    await b.reload(); await select(b);
+    await alice.setOffline(false);
+    await expect(a.locator('.editor-status')).toHaveText(/Saved|Up to date/, { timeout: 20000 });
     await Promise.all([alice.setOffline(true), bob.setOffline(true)]);
     await Promise.all([a.evaluate(() => (window as unknown as Window & { disconnectDocument: () => void }).disconnectDocument()),
       b.evaluate(() => (window as unknown as Window & { disconnectDocument: () => void }).disconnectDocument())]);

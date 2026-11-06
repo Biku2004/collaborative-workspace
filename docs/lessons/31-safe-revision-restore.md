@@ -1,0 +1,9 @@
+# Lesson 31 — Safe revision restore (in progress)
+
+Restoring a revision must create a new document epoch and new CRDT identities. Applying an old snapshot as another update to the current Yjs document would merge histories, and an offline client could reintroduce content that the user intended to replace.
+
+The first implementation slice copies validated materialized plain or supported rich content into a fresh Yjs document. It deliberately drops old structural-position history, chooses a client identity absent from the source and validates the new encoded state again. The loopback-only `/v3/fresh-state` candidate endpoint accepts version 3, a supported format and one Base64 checkpoint. Its request body is bounded at 128 KiB, its output at 256 KiB, and decoded source/result limits remain 8 KiB for plain or 64 KiB for rich. It uses the existing bounded workers and deadlines. This conversion alone is not a complete or safe restore API: Java must still enforce epoch ordering and authorization.
+
+The remaining work includes an atomic expected-epoch/head check, preservation of old history and audit data, a bounded way to deliver the new epoch's full initial state, and browser handling that quarantines old-epoch pending drafts. The current provider hard-codes epoch zero and cannot safely support restore yet. An authorized user must be able to retain and manually recover the old local draft rather than silently uploading it into the new epoch.
+
+Verification covers fresh-history text and formatting round trips, disjoint source/restored identities, invalid sources and the private transport bounds. Restore/edit races, old offline-update rejection and manual draft recovery remain to implement. This lesson is not complete, and no application restore endpoint is exposed by this initial slice.

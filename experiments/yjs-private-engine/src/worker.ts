@@ -5,6 +5,11 @@ import contract from '@workspace/rich-text-schema-v1/contract.json' with { type:
 
 try {
   if (Array.isArray(workerData)) parentPort!.postMessage({ ok: true, result: reconstruct(workerData as Uint8Array[]) });
+  else if (workerData.fresh === true) {
+    const { createFreshState } = await import('./freshState.js');
+    const checkpoint = createFreshState(workerData.format as string, workerData.checkpoint as Uint8Array);
+    parentPort!.postMessage({ ok: true, result: { version: 3, status: 'candidate', format: workerData.format, checkpoint: Buffer.from(checkpoint).toString('base64') } });
+  }
   else {
     const input = workerData as { format: string; updates: Uint8Array[]; commit: boolean };
     if (input.format !== contract.format) throw new InputError('INVALID_REQUEST');

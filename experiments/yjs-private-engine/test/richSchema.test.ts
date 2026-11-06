@@ -197,6 +197,8 @@ test('rich candidate rejects a missing dependency and excessive text', () => {
 test('rich candidate rejects a checkpoint beyond the bounded internal limit', () => {
   const doc = new Y.Doc();
   try {
+    // Varint client-ID width changes encoded size; keep this boundary fixture deterministic.
+    doc.clientID = 0xffffffff;
     const paragraph = new Y.XmlElement('paragraph'), text = new Y.XmlText();
     doc.getXmlFragment(contract.root).insert(0, [paragraph]); paragraph.insert(0, [text]); text.insert(0, 'x'.repeat(2000));
     for (let i = 0; i < 2000; i += 2) text.format(i, 1, { bold: {} });

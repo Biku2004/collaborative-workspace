@@ -19,6 +19,36 @@ async function withServer(run: (url: string) => Promise<void>, deadline: number 
 }
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
 
+test('private fresh-state transport validates sources and creates independent candidate histories', async () => {
+  const plain = new Y.Doc();
+  try {
+    plain.getText('content').insert(0, 'Saved content');
+    const source = Y.encodeStateAsUpdate(plain);
+    await withServer(async legacyUrl => {
+      const url = legacyUrl.replace('/v1/reconstruct', '/v3/fresh-state');
+      const result = await post(url, { version: 3, format: 'PLAIN_TEXT_V1', checkpoint: b64(source) });
+      assert.equal(result.status, 200); assert.equal(result.body.status, 'candidate'); assert.equal(result.body.version, 3);
+      const checkpoint = Buffer.from(result.body.checkpoint as string, 'base64');
+      const rebuilt = await post(legacyUrl, { version: 1, updates: [b64(checkpoint)] });
+      assert.equal(rebuilt.body.text, 'Saved content');
+      const oldClients = Y.decodeStateVector(Y.encodeStateVectorFromUpdate(source));
+      assert.ok([...Y.decodeStateVector(Y.encodeStateVectorFromUpdate(checkpoint)).keys()].every(id => !oldClients.has(id)));
+      const rich = await post(url, { version: 3, format: 'RICH_TEXT_V1', checkpoint: contract.initialUpdate });
+      assert.equal(rich.status, 200);
+      for (const body of [{ version: 3, format: 'RICH_TEXT_V2', checkpoint: contract.initialUpdate },
+        { version: 3, format: 'PLAIN_TEXT_V1', checkpoint: '%%%' },
+        { version: 3, format: 'PLAIN_TEXT_V1', checkpoint: b64(new Uint8Array(LIMITS.updateBytes + 1)) },
+        { version: 3, format: 'RICH_TEXT_V1', checkpoint: contract.initialUpdate, epoch: 1 }]) {
+        const invalid = await post(url, body); assert.equal(invalid.status, 400); assert.equal(invalid.body.checkpoint, undefined);
+      }
+      const uninitialized = await post(url, { version: 3, format: 'RICH_TEXT_V1', checkpoint: 'AAA=' });
+      assert.equal(uninitialized.status, 422); assert.equal(uninitialized.body.checkpoint, undefined);
+      const oversized = await fetch(url, { method: 'POST', body: 'x'.repeat(LIMITS.richBodyBytes + 1) });
+      assert.equal(oversized.status, 413);
+    });
+  } finally { plain.destroy(); }
+});
+
 test('shared Java transport fixture reconstructs to the expected Yjs text', async () => {
   const fixture = readFileSync(new URL('../../fixtures/plain-text.properties', import.meta.url), 'utf8');
   const update = /^update=(.+)$/m.exec(fixture)?.[1]?.trim();

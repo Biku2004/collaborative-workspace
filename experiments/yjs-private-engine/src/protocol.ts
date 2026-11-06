@@ -37,3 +37,13 @@ export function parseRichRequest(value: unknown): { updates: Uint8Array[]; commi
   if (commit && updates.length !== 2) throw new InputError('INVALID_REQUEST');
   return { updates, commit };
 }
+
+/** Restore conversion is a private candidate operation, not an epoch change or commit. */
+export function parseFreshRequest(value: unknown): { format: string; checkpoint: Uint8Array } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new InputError('INVALID_REQUEST');
+  const request = value as Record<string, unknown>;
+  if (Object.keys(request).some(key => !['version', 'format', 'checkpoint'].includes(key)) || request.version !== 3 ||
+      (request.format !== 'PLAIN_TEXT_V1' && request.format !== contract.format)) throw new InputError('INVALID_REQUEST');
+  const updates = parseRequest({ version: 1, updates: [request.checkpoint] }, request.format === contract.format);
+  return { format: request.format, checkpoint: updates[0]! };
+}

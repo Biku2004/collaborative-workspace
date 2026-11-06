@@ -6,7 +6,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.Semaphore;
 import java.util.function.BooleanSupplier;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -25,14 +24,14 @@ public class DocumentCheckpointService {
     private final YjsEngineClient engine;
     private final CollaborationFormatPolicy formats;
     private final TransactionTemplate transaction;
-    // Keep checkpoint work from occupying both private-engine worker slots.
-    private final Semaphore jobs = new Semaphore(1);
+    private final DocumentSnapshotBudget jobs;
 
     public record Published(DocumentCheckpointRepository.Checkpoint checkpoint, long observedHead) {}
 
     public DocumentCheckpointService(DocumentUpdateRepository updates, DocumentCheckpointRepository checkpoints,
-            WorkspaceRepository workspaces, YjsEngineClient engine, CollaborationFormatPolicy formats, PlatformTransactionManager manager) {
+            WorkspaceRepository workspaces, YjsEngineClient engine, CollaborationFormatPolicy formats, PlatformTransactionManager manager, DocumentSnapshotBudget jobs) {
         this.updates = updates; this.checkpoints = checkpoints; this.workspaces = workspaces; this.engine = engine; this.formats = formats;
+        this.jobs = jobs;
         transaction = new TransactionTemplate(manager); transaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
 
@@ -43,7 +42,7 @@ public class DocumentCheckpointService {
     public Published create(UUID workspace, UUID document, UUID actor, BooleanSupplier sessionValid) {
         Objects.requireNonNull(workspace); Objects.requireNonNull(document); Objects.requireNonNull(actor);
         Objects.requireNonNull(sessionValid);
-        if (!jobs.tryAcquire()) throw new CheckpointException("CHECKPOINT_BUSY");
+        if (!jobs.acquire()) throw new CheckpointException("CHECKPOINT_BUSY");
         try {
             if (!sessionValid.getAsBoolean()) throw new CheckpointException("ACCESS_DENIED");
             var head = accessible(workspace, document, actor);

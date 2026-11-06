@@ -1,4 +1,4 @@
-# API endpoint reference through Lesson 29
+# API endpoint reference through Lesson 30
 
 This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 
@@ -21,6 +21,9 @@ This table describes the currently implemented routes, not the planned collabora
 | POST | `/api/workspaces/{workspaceId}/documents/{documentId}/archive` | Archive an active document | Owner or editor, with CSRF | JSON `{ "version": 0 }`; returns 200 with `archived: true` and incremented version, or 409 for a stale version or already archived document. |
 | POST | `/api/workspaces/{workspaceId}/documents/{documentId}/checkpoints` | Publish a verified committed prefix | Owner or editor, with CSRF | Returns 201 with `epoch`, `throughSequence`, `observedHead`, `format` and Base64 `sha256`. A job advances at most 16 updates; repeat while behind. A concurrent checkpoint job gets 503. |
 | GET | `/api/workspaces/{workspaceId}/documents/{documentId}/checkpoints/latest` | Read the latest verified checkpoint | Current member of the active document's workspace | Returns 200 with Base64 `checkpoint`, `sha256`, `epoch`, `throughSequence` and `format`, or 404 when unavailable. Corruption fails verification. Response uses `no-store`. |
+| POST | `/api/workspaces/{workspaceId}/documents/{documentId}/revisions` | Save a named committed state | Owner or editor, with CSRF | JSON `name` (1–100 characters without controls) and UUID `requestId`; returns 201 with immutable metadata. A same-name retry returns the original revision; an ID/name conflict returns 409. |
+| GET | `/api/workspaces/{workspaceId}/documents/{documentId}/revisions` | List named revision metadata | Current member of the active document's workspace | Returns `items` and `nextCursor`, newest first. `limit` is 1–100, default 20; `cursor` is document-scoped. |
+| GET | `/api/workspaces/{workspaceId}/documents/{documentId}/revisions/{revisionId}` | Preview a standalone revision | Current member of the active document's workspace | Returns `revision` metadata, Base64 `checkpoint` and `sha256`, with `no-store`; inaccessible resources return 404 and invalid bytes fail verification. |
 | POST | `/api/documents` | Former unscoped creation route | Removed | Returns 404 for an authenticated request with valid CSRF. |
 | GET | `/api/documents/{id}` | Read one document | Any current workspace member | Returns 200 with document metadata, including archived documents; missing, unassigned, and inaccessible documents return 404. |
 | GET | `/api/workspaces/{workspaceId}/documents` | List documents in a workspace | Any current workspace member | Returns 200 with active `items` and `nextCursor`; accepts `limit` (1–100, default 20) and optional `cursor`. Inaccessible workspace gives 404, invalid page parameters give 400. |

@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import { DocumentProvider, type CollaborationFormat, type EditorState, type Presence } from './provider';
 import RichEditorBoundary from './RichEditorBoundary';
 const RichTextSurface = lazy(() => import('./RichTextSurface'));
+const RevisionsPanel = lazy(() => import('./RevisionsPanel'));
 
 type Props = { userId: string; workspaceId: string; documentId: string; title: string; format: CollaborationFormat; readOnly: boolean; onDirty: (dirty: boolean) => void; onBack: () => void };
 const initial: EditorState = { phase: 'connecting', text: '', pending: 0, message: 'Connecting…', hasLocalState: false };
@@ -11,6 +12,7 @@ export default function Editor({ userId, workspaceId, documentId, title, format,
   const [state, setState] = useState<EditorState>(initial);
   const [canRenderRich, setCanRenderRich] = useState(false);
   const [presence, setPresence] = useState<Presence[]>([]);
+  const [showRevisions, setShowRevisions] = useState(false);
   const provider = useRef<DocumentProvider | null>(null);
   const plainEditor = useRef<HTMLTextAreaElement | null>(null);
   const dirty = state.pending > 0;
@@ -18,7 +20,7 @@ export default function Editor({ userId, workspaceId, documentId, title, format,
   dirtyCallback.current = onDirty;
 
   useEffect(() => {
-    setState(initial); setCanRenderRich(false); setPresence([]);
+    setState(initial); setCanRenderRich(false); setPresence([]); setShowRevisions(false);
     const instance = new DocumentProvider(userId, workspaceId, documentId, next => {
       dirtyCallback.current(next.pending > 0);
       setState(next);
@@ -73,5 +75,7 @@ export default function Editor({ userId, workspaceId, documentId, title, format,
           instance.setPresence(Y.createRelativePositionFromTypeIndex(text, event.currentTarget.selectionStart), Y.createRelativePositionFromTypeIndex(text, event.currentTarget.selectionEnd));
         }} aria-describedby="editor-help" /></>}
     <p id="editor-help" className="muted small">Local changes are not saved on the server until confirmed. Browser storage is not private from other users of this browser profile.</p>
+    <button type="button" aria-expanded={showRevisions} onClick={() => setShowRevisions(value => !value)}>Named revisions</button>
+    {showRevisions && <Suspense fallback={<p role="status">Loading revisions…</p>}><RevisionsPanel key={documentId} workspaceId={workspaceId} documentId={documentId} readOnly={readOnly} online={state.phase === 'ready'} /></Suspense>}
   </section>;
 }

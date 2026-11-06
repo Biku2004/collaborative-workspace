@@ -59,4 +59,4 @@ The full serial backend suite passed 54 tests, including the complete browser fi
 
 The compact review checked lock ordering, speculative engine work, current-role checks, immutable publication, defensive byte copies, digest validation, bounds and sanitized exceptions. It reduced checkpoint concurrency to leave an engine slot available for live edits. Remaining limits are explicit: all history is retained, snapshots grow storage, jobs are manually triggered, HTTP session checks do not yet define a fully ordered logout boundary, and SHA-256 is not a signature. No history rows are deleted by this lesson.
 
-The feature remains a local learning prototype, and Lesson 27's security and history limitations still apply.
+Lesson 30 extends the one-job background budget to cover checkpoint and named-revision work together. The feature remains a local learning prototype, and Lesson 27's security and history limitations still apply.

@@ -45,7 +45,8 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 - [x] **Lesson 27 — Rich-text editor.** See [Lesson 27](lessons/27-rich-text-design.md). The local learning criteria are verified; the feature remains gated with unresolved security and history limits.
 - [x] **Lesson 28 — Collaborator presence.** See [Lesson 28](lessons/28-collaborator-presence.md). Authenticated, bounded ephemeral presence is verified locally, including a regression test for native selection timing; aggregate capacity and multi-instance behavior remain future work.
 - [x] **Lesson 29 — Verified checkpoints.** See [Lesson 29](lessons/29-verified-checkpoints.md). Fixed-boundary reconstruction, checksum checks, concurrent tails and safe publication are tested; all history is retained.
-- [ ] Add named revisions and safe restore in separate lessons.
+- [x] **Lesson 30 — Named revisions.** See [Lesson 30](lessons/30-named-revisions.md). Immutable snapshots, authorized listing and read-only preview are tested; pending local edits are explicitly excluded until committed.
+- [ ] **Lesson 31 — Safe revision restore with epochs.**
 - [ ] Add search, monitoring, multi-instance communication and failure testing as separate milestones.
 
 The [full roadmap](03-implementation-roadmap.md) gives the dependencies, acceptance tests and later scaling milestones. We will check whether each new service is already available and use Docker for missing services as needed. We will not use Docker for your regular local PostgreSQL development database.

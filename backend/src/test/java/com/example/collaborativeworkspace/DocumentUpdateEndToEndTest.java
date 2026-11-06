@@ -49,8 +49,56 @@ class DocumentUpdateEndToEndTest {
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean YjsEngineClient engineClient;
     @Autowired DocumentUpdateService updateService;
     @Autowired DocumentCheckpointService checkpointService;
+    @Autowired DocumentRevisionService revisionService;
     @Autowired tools.jackson.databind.json.JsonMapper json;
     static Process engine;
+
+    @Test void revisionCapturesFixedHeadSurvivesLaterEditsAndChecksIntegrity() throws Exception {
+        UUID ownerId = UUID.randomUUID(), outsiderId = UUID.randomUUID(), workspace = null;
+        String owner = "revision-owner-" + ownerId + "@example.com", outsider = "revision-outsider-" + outsiderId + "@example.com";
+        var entered = new java.util.concurrent.CountDownLatch(1); var release = new java.util.concurrent.CountDownLatch(1);
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "revision-capture-test"));
+        try {
+            users.create(ownerId, owner, encoder.encode("test-user-password")); users.create(outsiderId, outsider, encoder.encode("test-user-password"));
+            workspace = workspaces.create(owner, "revision test").id();
+            UUID document = documents.create(workspace, owner, "revisions").id(), selectedWorkspace = workspace;
+            var fixture = new Properties();
+            try (var reader = java.nio.file.Files.newBufferedReader(Path.of("..", "experiments", "yjs-private-engine", "fixtures", "dependency-order.properties"))) { fixture.load(reader); }
+            byte[] first = Base64.getDecoder().decode(fixture.getProperty("first")), next = Base64.getDecoder().decode(fixture.getProperty("dependent"));
+            updateService.submit(workspace, document, ownerId, 0, UUID.randomUUID(), first, () -> true);
+            var request = new CreateRevisionRequest("Before change", UUID.randomUUID());
+            org.mockito.Mockito.doAnswer(invocation -> {
+                if (Thread.currentThread().getName().equals("revision-capture-test")) {
+                    entered.countDown(); if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Revision capture test timed out");
+                }
+                return invocation.callRealMethod();
+            }).when(engineClient).reconstruct(org.mockito.ArgumentMatchers.anyList());
+            var future = executor.submit(() -> revisionService.create(selectedWorkspace, document, ownerId, request, () -> true));
+            assertTrue(entered.await(10, TimeUnit.SECONDS));
+            updateService.submit(workspace, document, ownerId, 0, UUID.randomUUID(), next, () -> true); release.countDown();
+            var saved = future.get(20, TimeUnit.SECONDS);
+            assertEquals(1, saved.throughSequence());
+            var preview = revisionService.preview(workspace, document, ownerId, saved.id());
+            assertEquals(engineClient.reconstruct(java.util.List.of(first)).text(), engineClient.reconstruct(java.util.List.of(preview.bytes())).text());
+            assertEquals(saved.id(), revisionService.create(workspace, document, ownerId, request, () -> true).id());
+            assertEquals("REVISION_ID_CONFLICT", assertThrows(RevisionException.class, () -> revisionService.create(selectedWorkspace, document, ownerId,
+                    new CreateRevisionRequest("Changed name", request.requestId()), () -> true)).code());
+            var newer = revisionService.create(workspace, document, ownerId, new CreateRevisionRequest("After change", UUID.randomUUID()), () -> true);
+            assertEquals(2, newer.throughSequence());
+            var page = revisionService.list(workspace, document, ownerId, 1, null);
+            assertEquals(newer.id(), page.items().get(0).id()); assertNotNull(page.nextCursor());
+            assertEquals(saved.id(), revisionService.list(workspace, document, ownerId, 1, page.nextCursor()).items().get(0).id());
+            assertEquals("NOT_FOUND", assertThrows(RevisionException.class, () -> revisionService.preview(selectedWorkspace, document, outsiderId, saved.id())).code());
+            assertEquals("NOT_FOUND", assertThrows(RevisionException.class, () -> revisionService.list(selectedWorkspace, document, outsiderId, 20, null)).code());
+            byte[] corrupt = preview.bytes(); corrupt[corrupt.length - 1] ^= 1;
+            jdbc.update("UPDATE document_revisions SET checkpoint=? WHERE id=?", corrupt, saved.id());
+            assertEquals("REVISION_INVALID", assertThrows(RevisionException.class, () -> revisionService.preview(selectedWorkspace, document, ownerId, saved.id())).code());
+        } finally {
+            release.countDown(); executor.shutdownNow(); executor.awaitTermination(5, TimeUnit.SECONDS);
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id IN (?, ?)", ownerId, outsiderId);
+        }
+    }
 
     @Test void checkpointRetainsConcurrentTailAndRejectsCorruption() throws Exception {
         UUID ownerId = UUID.randomUUID(), workspace = null;
@@ -188,6 +236,8 @@ class DocumentUpdateEndToEndTest {
             var a = executor.submit(() -> checkpointService.create(selectedWorkspace, document, ownerId));
             assertTrue(entered.await(10, TimeUnit.SECONDS));
             assertEquals("CHECKPOINT_BUSY", assertThrows(CheckpointException.class, () -> checkpointService.create(selectedWorkspace, document, ownerId)).code());
+            assertEquals("REVISION_BUSY", assertThrows(RevisionException.class, () -> revisionService.create(selectedWorkspace, document, ownerId,
+                    new CreateRevisionRequest("Busy", UUID.randomUUID()), () -> true)).code());
             release.countDown();
             var first = a.get(20, TimeUnit.SECONDS);
             var second = checkpointService.create(selectedWorkspace, document, ownerId);
@@ -330,6 +380,9 @@ class DocumentUpdateEndToEndTest {
             var materialized = checkpointService.create(workspace, document, ownerId);
             assertEquals(2, materialized.checkpoint().sequence());
             assertTrue(engineClient.reconstructRich(java.util.List.of(materialized.checkpoint().bytes())).initialized());
+            var richRevision = revisionService.create(workspace, document, ownerId, new CreateRevisionRequest("Rich state", UUID.randomUUID()), () -> true);
+            assertEquals(2, richRevision.throughSequence());
+            assertArrayEquals(checkpoint, revisionService.preview(workspace, document, ownerId, richRevision.id()).bytes());
             socket.sendText(request, true).join();
             assertTrue(listener.next("SAVED").contains("\"duplicate\":true"));
             var viewerClient = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
@@ -370,10 +423,31 @@ class DocumentUpdateEndToEndTest {
             login(ownerClient, base, owner); login(viewerClient, base, viewer); login(outsiderClient, base, outsider);
             assertEquals(404, get(ownerClient, path + "/latest").statusCode());
             assertEquals(404, get(outsiderClient, path + "/latest").statusCode());
-            var withoutCsrf = HttpRequest.newBuilder(URI.create(path)).POST(HttpRequest.BodyPublishers.noBody()).build();
-            assertEquals(403, ownerClient.send(withoutCsrf, HttpResponse.BodyHandlers.discarding()).statusCode());
             String ownerToken = json.readTree(get(ownerClient, base + "/api/csrf").body()).path("token").asText();
             String viewerToken = json.readTree(get(viewerClient, base + "/api/csrf").body()).path("token").asText();
+            String revisionsPath = base + "/api/workspaces/" + workspace + "/documents/" + document + "/revisions";
+            String revisionJson = json.writeValueAsString(java.util.Map.of("name", "Reviewed", "requestId", UUID.randomUUID()));
+            var revisionPost = HttpRequest.newBuilder(URI.create(revisionsPath)).header("Content-Type", "application/json")
+                    .header("X-CSRF-TOKEN", ownerToken).POST(HttpRequest.BodyPublishers.ofString(revisionJson)).build();
+            var revisionCreated = ownerClient.send(revisionPost, HttpResponse.BodyHandlers.ofString()); assertEquals(201, revisionCreated.statusCode());
+            String revisionId = json.readTree(revisionCreated.body()).path("id").asText();
+            var viewerPost = HttpRequest.newBuilder(URI.create(revisionsPath)).header("Content-Type", "application/json")
+                    .header("X-CSRF-TOKEN", viewerToken).POST(HttpRequest.BodyPublishers.ofString(revisionJson)).build();
+            assertEquals(403, viewerClient.send(viewerPost, HttpResponse.BodyHandlers.discarding()).statusCode());
+            assertEquals(200, get(viewerClient, revisionsPath).statusCode());
+            assertEquals(200, get(viewerClient, revisionsPath + "/" + revisionId).statusCode());
+            assertTrue(get(viewerClient, revisionsPath + "/" + revisionId).headers().firstValue("Cache-Control").orElse("").contains("no-store"));
+            assertEquals(404, get(outsiderClient, revisionsPath).statusCode()); assertEquals(404, get(outsiderClient, revisionsPath + "/" + revisionId).statusCode());
+            assertEquals(400, get(ownerClient, revisionsPath + "?limit=101").statusCode());
+            var noRevisionCsrf = HttpRequest.newBuilder(URI.create(revisionsPath)).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(revisionJson)).build();
+            assertEquals(403, ownerClient.send(noRevisionCsrf, HttpResponse.BodyHandlers.discarding()).statusCode());
+            var invalidName = HttpRequest.newBuilder(URI.create(revisionsPath)).header("Content-Type", "application/json").header("X-CSRF-TOKEN", ownerToken)
+                    .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(java.util.Map.of("name", " ", "requestId", UUID.randomUUID())))).build();
+            assertEquals(400, ownerClient.send(invalidName, HttpResponse.BodyHandlers.discarding()).statusCode());
+            UUID another = documents.create(workspace, owner, "another").id();
+            assertEquals(404, get(ownerClient, base + "/api/workspaces/" + workspace + "/documents/" + another + "/revisions/" + revisionId).statusCode());
+            var withoutCsrf = HttpRequest.newBuilder(URI.create(path)).POST(HttpRequest.BodyPublishers.noBody()).build();
+            assertEquals(403, ownerClient.send(withoutCsrf, HttpResponse.BodyHandlers.discarding()).statusCode());
             var denied = HttpRequest.newBuilder(URI.create(path)).header("X-CSRF-TOKEN", viewerToken).POST(HttpRequest.BodyPublishers.noBody()).build();
             assertEquals(403, viewerClient.send(denied, HttpResponse.BodyHandlers.discarding()).statusCode());
             var create = HttpRequest.newBuilder(URI.create(path)).header("X-CSRF-TOKEN", ownerToken).POST(HttpRequest.BodyPublishers.noBody()).build();

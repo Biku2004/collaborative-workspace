@@ -32,9 +32,16 @@ class DocumentFormatGuardTest {
         verify(updates, never()).findAfter(any(), anyLong(), anyLong(), anyLong(), anyInt());
 
         var storedCheckpoints = mock(DocumentCheckpointRepository.class);
-        var checkpoints = new DocumentCheckpointService(updates, storedCheckpoints, workspaces, engine, formats, transaction);
+        var budget = new DocumentSnapshotBudget();
+        var checkpoints = new DocumentCheckpointService(updates, storedCheckpoints, workspaces, engine, formats, transaction, budget);
         assertEquals("SCHEMA_UNSUPPORTED", assertThrows(CheckpointException.class, () -> checkpoints.create(workspace, document, actor)).code());
         assertEquals("SCHEMA_UNSUPPORTED", assertThrows(CheckpointException.class, () -> checkpoints.latest(workspace, document, actor)).code());
         verifyNoInteractions(storedCheckpoints, engine);
+        var storedRevisions = mock(DocumentRevisionRepository.class);
+        var revisions = new DocumentRevisionService(updates, storedRevisions, workspaces, formats, engine, transaction, budget);
+        assertEquals("SCHEMA_UNSUPPORTED", assertThrows(RevisionException.class, () -> revisions.create(workspace, document, actor,
+                new CreateRevisionRequest("Rich", UUID.randomUUID()), () -> true)).code());
+        assertEquals("SCHEMA_UNSUPPORTED", assertThrows(RevisionException.class, () -> revisions.list(workspace, document, actor, 20, null)).code());
+        verifyNoInteractions(storedRevisions, engine);
     }
 }

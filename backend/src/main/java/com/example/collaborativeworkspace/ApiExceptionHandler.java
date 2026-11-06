@@ -10,6 +10,17 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(RevisionException.class)
+    ResponseEntity<ApiError> revision(RevisionException ex) {
+        if (ex.code().equals("REVISION_INVALID")) org.slf4j.LoggerFactory.getLogger(getClass()).error("Revision verification failed");
+        return switch (ex.code()) {
+            case "NOT_FOUND" -> error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Resource not found");
+            case "ACCESS_DENIED" -> error(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access denied");
+            case "EPOCH_CHANGED", "SCHEMA_UNSUPPORTED", "REVISION_ID_CONFLICT" -> error(HttpStatus.CONFLICT, ex.code(), "Revision request conflicts with the stored document");
+            case "REVISION_BUSY" -> error(HttpStatus.SERVICE_UNAVAILABLE, ex.code(), "Revision service temporarily busy");
+            default -> error(HttpStatus.INTERNAL_SERVER_ERROR, "REVISION_INVALID", "Revision verification failed");
+        };
+    }
     @ExceptionHandler(CheckpointException.class)
     ResponseEntity<ApiError> checkpoint(CheckpointException ex) {
         if (ex.code().equals("CHECKPOINT_CORRUPT") || ex.code().equals("CHECKPOINT_LOG_CORRUPT") || ex.code().equals("CHECKPOINT_VERIFICATION_FAILED"))

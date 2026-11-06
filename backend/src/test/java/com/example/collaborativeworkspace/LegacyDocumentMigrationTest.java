@@ -155,6 +155,10 @@ class LegacyDocumentMigrationTest {
                 assertEquals(8192, jdbc.queryForObject("SELECT octet_length(payload) FROM document_updates WHERE document_id=? AND sequence=1", Integer.class, document));
                 assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_update_outbox WHERE event_id=?", Integer.class, event));
                 assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints", Integer.class));
+                jdbc.update("INSERT INTO document_checkpoints(document_id,epoch,through_sequence,collaboration_format,checkpoint,checkpoint_sha256) VALUES (?,0,1,'RICH_TEXT_V1',?,?)", document, new byte[] {0, 0}, new byte[32]);
+                migrations.target("16").load().migrate();
+                assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, document));
+                assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_revisions", Integer.class));
             }
         } finally {
             try (var connection = DriverManager.getConnection(url, user, password); var statement = connection.createStatement()) {

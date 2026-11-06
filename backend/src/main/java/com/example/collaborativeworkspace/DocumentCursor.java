@@ -24,7 +24,11 @@ public record DocumentCursor(Instant createdAt, UUID id) {
     }
 
     public static String encode(UUID workspaceId, Document document) {
-        String value = workspaceId + "|" + document.createdAt() + "|" + document.id();
+        return encode(workspaceId, document.createdAt(), document.id());
+    }
+
+    public static String encode(UUID scopeId, Instant createdAt, UUID id) {
+        String value = scopeId + "|" + createdAt + "|" + id;
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 }

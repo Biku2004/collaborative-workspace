@@ -154,6 +154,7 @@ export class DocumentProvider {
     if (update.byteLength > 8192 || this.pending.length > MAX_PENDING) {
       this.fail('This edit is too large or the pending queue is full. Copy your text before leaving.'); return;
     }
+    if (this.phase === 'ready' || this.phase === 'offline') this.message = this.phase === 'offline' ? 'Saving locally…' : 'Saving…';
     this.emit(); this.persist();
   };
 

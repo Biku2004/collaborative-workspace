@@ -3,6 +3,8 @@ export type Document = { id: string; workspaceId: string; title: string; created
 export type Page<T> = { items: T[]; nextCursor: string | null };
 type Csrf = { headerName: string; token: string };
 export type CurrentUser = { username: string; id?: string };
+export type Revision = { id: string; name: string; createdBy: string; epoch: number; throughSequence: number; format: string; createdAt: string };
+export type RevisionPreview = { revision: Revision; checkpoint: string; sha256: string };
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -62,4 +64,19 @@ export async function createRichDocument(workspaceId: string, title: string, req
     body: JSON.stringify({ title, format: 'RICH_TEXT_V1' }),
   });
   return response.json() as Promise<Document>;
+}
+
+function revisionPath(workspaceId: string, documentId: string): string {
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/revisions`;
+}
+export async function saveRevision(workspaceId: string, documentId: string, name: string, requestId: string): Promise<Revision> {
+  const token = await csrf();
+  return (await checked(revisionPath(workspaceId, documentId), { method: 'POST',
+    headers: { 'Content-Type': 'application/json', [token.headerName]: token.token }, body: JSON.stringify({ name, requestId }) })).json() as Promise<Revision>;
+}
+export async function revisionPage(workspaceId: string, documentId: string, cursor?: string, signal?: AbortSignal): Promise<Page<Revision>> {
+  return (await checked(revisionPath(workspaceId, documentId) + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''), { signal })).json() as Promise<Page<Revision>>;
+}
+export async function revisionPreview(workspaceId: string, documentId: string, id: string, signal?: AbortSignal): Promise<RevisionPreview> {
+  return (await checked(`${revisionPath(workspaceId, documentId)}/${encodeURIComponent(id)}`, { signal })).json() as Promise<RevisionPreview>;
 }

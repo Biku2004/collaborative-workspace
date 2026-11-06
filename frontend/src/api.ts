@@ -5,6 +5,8 @@ type Csrf = { headerName: string; token: string };
 export type CurrentUser = { username: string; id?: string };
 export type Revision = { id: string; name: string; createdBy: string; epoch: number; throughSequence: number; format: string; createdAt: string };
 export type RevisionPreview = { revision: Revision; checkpoint: string; sha256: string };
+export type Baseline = { epoch: number; head: number; format: string; checkpoint: string; sha256: string };
+export type RestoreRequest = { revisionId: string; requestId: string; expectedEpoch: number; expectedHead: number };
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -79,4 +81,12 @@ export async function revisionPage(workspaceId: string, documentId: string, curs
 }
 export async function revisionPreview(workspaceId: string, documentId: string, id: string, signal?: AbortSignal): Promise<RevisionPreview> {
   return (await checked(`${revisionPath(workspaceId, documentId)}/${encodeURIComponent(id)}`, { signal })).json() as Promise<RevisionPreview>;
+}
+export async function documentBaseline(workspaceId: string, documentId: string, signal?: AbortSignal): Promise<Baseline> {
+  return (await checked(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/baseline`, { signal, cache: 'no-store' })).json() as Promise<Baseline>;
+}
+export async function restoreRevision(workspaceId: string, documentId: string, request: RestoreRequest): Promise<{ epoch: number }> {
+  const token = await csrf();
+  return (await checked(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/restore`, { method: 'POST',
+    headers: { 'Content-Type': 'application/json', [token.headerName]: token.token }, body: JSON.stringify(request) })).json() as Promise<{ epoch: number }>;
 }

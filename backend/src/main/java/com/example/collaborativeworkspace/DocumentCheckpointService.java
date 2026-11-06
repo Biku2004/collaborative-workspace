@@ -55,6 +55,7 @@ public class DocumentCheckpointService {
                 verify(checkpoint, head.collaborationFormat());
                 start = checkpoint.sequence(); state = checkpoint.bytes();
             }
+            if (head.epoch() > 0 && previous.isEmpty()) throw new CheckpointException("CHECKPOINT_CORRUPT");
             long through = start + Math.min(head.sequence() - start, MAX_UPDATES_PER_JOB);
             var tail = checkpoints.tail(document, head.epoch(), start, through, MAX_UPDATES_PER_JOB);
             long sequence = start;
@@ -62,7 +63,7 @@ public class DocumentCheckpointService {
                 if (update.sequence() != sequence + 1 || !MessageDigest.isEqual(hash(update.bytes()), update.digest()))
                     throw new CheckpointException("CHECKPOINT_LOG_CORRUPT");
                 if ("RICH_TEXT_V1".equals(head.collaborationFormat())) {
-                    var candidate = sequence == 0 ? engine.reconstructRich(List.of(update.bytes()))
+                    var candidate = sequence == 0 && head.epoch() == 0 ? engine.reconstructRich(List.of(update.bytes()))
                             : engine.reconstructRichForCommit(List.of(state, update.bytes()));
                     if (!candidate.initialized()) throw new CheckpointException("CHECKPOINT_LOG_CORRUPT");
                     state = candidate.checkpoint();

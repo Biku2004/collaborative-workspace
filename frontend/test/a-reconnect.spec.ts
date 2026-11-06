@@ -5,6 +5,7 @@ test('independent offline insert and delete edits reconcile after automatic reco
   test.setTimeout(90000);
   const alice = await browser.newContext({ baseURL });
   const bob = await browser.newContext({ baseURL });
+  let restoreBob: (() => Promise<void>) | undefined;
   async function open(context: BrowserContext, email: string) {
     await context.addInitScript(() => {
       const original = WebSocket.prototype.send;
@@ -66,13 +67,16 @@ test('independent offline insert and delete edits reconcile after automatic reco
     await expect(b.page.locator('.editor-status')).toHaveText('Saved locally; pending server confirmation');
     const csrf = await (await alice.request.get('/api/csrf')).json() as { token: string; headerName: string };
     const workspace = process.env.WORKSPACE_E2E_SHARED_WORKSPACE!, bobId = process.env.WORKSPACE_E2E_BOB_ID!;
+    restoreBob = async () => {
+      expect((await alice.request.post(`/api/workspaces/${workspace}/members`, { headers: { [csrf.headerName]: csrf.token }, data: { email: process.env.WORKSPACE_E2E_BOB!, role: 'EDITOR' } })).status()).toBe(200);
+    };
     expect((await alice.request.delete(`/api/workspaces/${workspace}/members/${bobId}`, { headers: { [csrf.headerName]: csrf.token } })).status()).toBe(204);
     const sentBefore = await b.page.evaluate(() => (window as unknown as Window & { submissions: string[] }).submissions.length);
     await bob.setOffline(false);
-    await expect(b.page.locator('.editor-status')).toContainText(/Offline|Reconnecting|Waiting/, { timeout: 10000 });
+    await expect(b.page.locator('.editor-status')).toContainText('Access was denied or revoked', { timeout: 10000 });
+    await expect(b.editor).toHaveAttribute('readonly');
     await b.page.waitForTimeout(2500);
     expect(await b.editor.inputValue()).toBe('ACE! private draft');
     expect(await b.page.evaluate(() => (window as unknown as Window & { submissions: string[] }).submissions.length)).toBe(sentBefore);
-    expect((await alice.request.post(`/api/workspaces/${workspace}/members`, { headers: { [csrf.headerName]: csrf.token }, data: { email: process.env.WORKSPACE_E2E_BOB!, role: 'EDITOR' } })).status()).toBe(200);
-  } finally { await alice.close(); await bob.close(); }
+  } finally { try { await restoreBob?.(); } finally { await alice.close(); await bob.close(); } }
 });

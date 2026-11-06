@@ -43,5 +43,10 @@ class DocumentFormatGuardTest {
                 new CreateRevisionRequest("Rich", UUID.randomUUID()), () -> true)).code());
         assertEquals("SCHEMA_UNSUPPORTED", assertThrows(RevisionException.class, () -> revisions.list(workspace, document, actor, 20, null)).code());
         verifyNoInteractions(storedRevisions, engine);
+        var restores = new DocumentRestoreService(updates, revisions, storedCheckpoints, mock(DocumentRestoreRepository.class), workspaces, formats, engine, budget, transaction);
+        assertEquals("SCHEMA_UNSUPPORTED", assertThrows(RevisionException.class, () -> restores.baseline(workspace, document, actor)).code());
+        assertEquals("SCHEMA_UNSUPPORTED", assertThrows(RevisionException.class, () -> restores.restore(workspace, document, actor,
+                new RestoreRevisionRequest(UUID.randomUUID(), UUID.randomUUID(), 0L, 0L), () -> true)).code());
+        verifyNoInteractions(storedRevisions, engine);
     }
 }

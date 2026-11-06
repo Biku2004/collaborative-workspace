@@ -1,4 +1,11 @@
 import { expect, test } from '@playwright/test';
+import { createHash } from 'node:crypto';
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/baseline', route => route.fulfill({ status: 200, json: { epoch: 0, head: 0,
+    format: route.request().url().includes('000000000041') ? 'RICH_TEXT_V1' : 'PLAIN_TEXT_V1', checkpoint: 'AAA=',
+    sha256: createHash('sha256').update(new Uint8Array([0, 0])).digest('base64') } }));
+});
 
 test('a first synchronization interrupted mid-replay is not an offline editing baseline', async ({ page }) => {
   const user = '10000000-0000-4000-8000-000000000001';
@@ -84,7 +91,7 @@ test('an epoch change rejects reconciliation before pending updates are sent', a
     const hooks = window as unknown as Window & { message: string; pending: number; submissions: number };
     return { message: hooks.message, pending: hooks.pending, submissions: hooks.submissions };
   });
-  expect(result.message).toContain('version changed');
+  expect(result.message).toContain('quarantined');
   expect(result.pending).toBe(1);
   expect(result.submissions).toBe(0);
 });

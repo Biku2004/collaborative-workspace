@@ -263,7 +263,8 @@ test('a revoked member can recover a local draft without uploading it', async ({
     await page.reload();
     await page.getByRole('button', { name: 'Open last local document' }).click();
     await expect(editor).toHaveValue(draft);
-    await expect(page.locator('.editor-status')).toContainText(/Offline|Saved locally/);
+    await expect(page.locator('.editor-status')).toContainText('Access was denied or revoked');
+    await expect(editor).toHaveAttribute('readonly');
     expect(await page.evaluate(() => (window as unknown as Window & { submissions: () => number }).submissions())).toBe(0);
   } finally { await member.close(); await owner.close(); }
 });

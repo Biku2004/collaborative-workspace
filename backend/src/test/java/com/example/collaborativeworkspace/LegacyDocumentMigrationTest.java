@@ -159,6 +159,10 @@ class LegacyDocumentMigrationTest {
                 migrations.target("16").load().migrate();
                 assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, document));
                 assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_revisions", Integer.class));
+                migrations.target("17").load().migrate();
+                assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, document));
+                assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_update_outbox WHERE event_id=?", Integer.class, event));
+                assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_restore_events", Integer.class));
             }
         } finally {
             try (var connection = DriverManager.getConnection(url, user, password); var statement = connection.createStatement()) {

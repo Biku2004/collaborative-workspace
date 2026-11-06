@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
 import * as Y from 'yjs';
-import { revisionPage, revisionPreview, saveRevision, type Revision, type RevisionPreview } from './api';
+import { ApiError, documentBaseline, restoreRevision, revisionPage, revisionPreview, saveRevision, type RestoreRequest, type Revision, type RevisionPreview } from './api';
 import RichEditorBoundary from './RichEditorBoundary';
+import { verifiedState } from './verifiedState';
 const RichTextSurface = lazy(() => import('./RichTextSurface'));
 
-type Props = { workspaceId: string; documentId: string; readOnly: boolean; online: boolean };
+type Props = { workspaceId: string; documentId: string; readOnly: boolean; online: boolean; onRestored: (epoch: number) => void };
 
 function Preview({ snapshot }: { snapshot: RevisionPreview }) {
   const [doc, setDoc] = useState<Y.Doc>();
@@ -14,15 +15,7 @@ function Preview({ snapshot }: { snapshot: RevisionPreview }) {
     const candidate = new Y.Doc();
     setDoc(undefined); setError('');
     void (async () => {
-      if (snapshot.revision.format !== 'PLAIN_TEXT_V1' && snapshot.revision.format !== 'RICH_TEXT_V1') throw new Error('Unsupported revision format');
-      const max = snapshot.revision.format === 'PLAIN_TEXT_V1' ? 8192 : 65536;
-      if (snapshot.checkpoint.length > Math.ceil(max / 3) * 4 || snapshot.sha256.length !== 44) throw new Error('Invalid revision');
-      const binary = atob(snapshot.checkpoint);
-      if (!binary.length || binary.length > max || btoa(binary) !== snapshot.checkpoint) throw new Error('Invalid revision');
-      const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
-      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-      let encoded = ''; for (const byte of digest) encoded += String.fromCharCode(byte);
-      if (btoa(encoded) !== snapshot.sha256) throw new Error('Revision checksum failed');
+      const bytes = await verifiedState(snapshot.checkpoint, snapshot.sha256, snapshot.revision.format);
       if (!active) return;
       Y.applyUpdate(candidate, bytes); setDoc(candidate);
     })().catch(() => { if (active) setError('This revision could not be verified.'); });
@@ -36,10 +29,11 @@ function Preview({ snapshot }: { snapshot: RevisionPreview }) {
   </section>;
 }
 
-export default function RevisionsPanel({ workspaceId, documentId, readOnly, online }: Props) {
+export default function RevisionsPanel({ workspaceId, documentId, readOnly, online, onRestored }: Props) {
   const [name, setName] = useState(''), [items, setItems] = useState<Revision[]>([]), [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(true);
   const [preview, setPreview] = useState<RevisionPreview>();
+  const [restore, setRestore] = useState<RestoreRequest>();
   const request = useRef<{ name: string; id: string } | undefined>(undefined);
   const active = useRef(true), read = useRef<AbortController | undefined>(undefined);
   useEffect(() => {
@@ -65,10 +59,34 @@ export default function RevisionsPanel({ workspaceId, documentId, readOnly, onli
     finally { if (active.current) setBusy(false); }
   }
   async function show(id: string) {
+    if (busy) return;
     read.current?.abort(); const controller = new AbortController(); read.current = controller;
-    setError(''); setPreview(undefined);
+    setError(''); setPreview(undefined); setRestore(undefined);
     try { const result = await revisionPreview(workspaceId, documentId, id, controller.signal); if (active.current && !controller.signal.aborted) setPreview(result); }
     catch { if (active.current && !controller.signal.aborted) setError('The revision is unavailable or access changed.'); }
+  }
+  async function reviewRestore() {
+    if (!preview || busy || readOnly || !online) return;
+    setBusy(true); setError(''); setRestore(undefined);
+    const controller = new AbortController(); read.current?.abort(); read.current = controller;
+    try {
+      const baseline = await documentBaseline(workspaceId, documentId, controller.signal);
+      if (active.current && !controller.signal.aborted) setRestore({ revisionId: preview.revision.id, requestId: crypto.randomUUID(), expectedEpoch: baseline.epoch, expectedHead: baseline.head });
+    } catch { if (active.current && !controller.signal.aborted) setError('The current version could not be checked.'); }
+    finally { if (active.current) setBusy(false); }
+  }
+  async function confirmRestore() {
+    if (!restore || busy || readOnly || !online) return;
+    setBusy(true); setError('');
+    try {
+      const result = await restoreRevision(workspaceId, documentId, restore);
+      if (active.current) { setMessage('Revision restored. Keep your old draft before opening the restored version.'); onRestored(result.epoch); setRestore(undefined); }
+    } catch (error) {
+      if (active.current) {
+        setError(error instanceof ApiError && error.status === 409 ? 'The document changed. Review the restore again before replacing it.' : 'Restore could not be confirmed. Retry this request or check the current version.');
+        if (error instanceof ApiError && error.status === 409) setRestore(undefined);
+      }
+    } finally { if (active.current) setBusy(false); }
   }
   async function more() {
     if (!cursor || busy) return;
@@ -84,8 +102,11 @@ export default function RevisionsPanel({ workspaceId, documentId, readOnly, onli
     {!readOnly && <form onSubmit={save}><label htmlFor="revision-name">Revision name</label><input id="revision-name" value={name} onChange={event => setName(event.target.value)} maxLength={100} disabled={busy} required />
       <button type="submit" disabled={busy || !online}>Save revision</button></form>}
     {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}
-    <ul>{items.map(item => <li key={item.id}><button type="button" onClick={() => void show(item.id)}>{item.name} — sequence {item.throughSequence}</button></li>)}</ul>
+    <ul>{items.map(item => <li key={item.id}><button type="button" disabled={busy} onClick={() => void show(item.id)}>{item.name} — sequence {item.throughSequence}</button></li>)}</ul>
     {cursor && <button type="button" disabled={busy} onClick={() => void more()}>Load more revisions</button>}
     {preview && <Preview key={preview.revision.id} snapshot={preview} />}
+    {preview && !readOnly && <button type="button" disabled={busy || !online} onClick={() => void reviewRestore()}>Review restore</button>}
+    {restore && preview && <section aria-label="Confirm revision restore"><p>Replace the current document at epoch {restore.expectedEpoch}, committed sequence {restore.expectedHead} with “{preview.revision.name}”? Other users' pending edits will remain in their old local drafts. Current local drafts will be quarantined.</p>
+      <button type="button" disabled={busy || !online} onClick={() => void confirmRestore()}>Restore this revision</button></section>}
   </section>;
 }

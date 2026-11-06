@@ -1,9 +1,10 @@
 import * as Y from 'yjs';
 import { LocalDocumentStore } from './localDocumentStore';
-import { ApiError, currentUser } from './api';
+import { ApiError, currentUser, documentBaseline } from './api';
+import { verifiedState } from './verifiedState';
 
 type Phase = 'connecting' | 'syncing' | 'ready' | 'offline' | 'waiting' | 'failed';
-export type EditorState = { phase: Phase; text: string; pending: number; message: string; hasLocalState: boolean };
+export type EditorState = { phase: Phase; text: string; pending: number; message: string; hasLocalState: boolean; nextEpoch?: number };
 type Pending = { id: string; payload: string };
 type UpdateEvent = { sequence: number; payload: string };
 export type CollaborationFormat = 'PLAIN_TEXT_V1' | 'RICH_TEXT_V1';
@@ -56,6 +57,7 @@ export class DocumentProvider {
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private retryAttempt = 0;
   private checkingIdentity = false;
+  private nextEpoch?: number;
   private identityAbort?: AbortController;
   private readonly presence = new Map<string, Presence>();
   private readonly presenceListeners = new Set<(presence: Presence[]) => void>();
@@ -65,7 +67,7 @@ export class DocumentProvider {
   private presenceSendTimer?: ReturnType<typeof setTimeout>;
 
   constructor(private readonly userId: string, private readonly workspaceId: string, private readonly documentId: string,
-              private readonly changed: (state: EditorState) => void, private readonly format: CollaborationFormat = 'PLAIN_TEXT_V1') {
+              private readonly changed: (state: EditorState) => void, private readonly format: CollaborationFormat = 'PLAIN_TEXT_V1', private readonly epoch = 0) {
     if (format === 'PLAIN_TEXT_V1') this.text = this.doc.getText('content');
     this.text?.observe(this.onText);
     this.doc.on('update', this.onUpdate);
@@ -80,7 +82,7 @@ export class DocumentProvider {
 
   private async initialize(): Promise<void> {
     try {
-      const store = await LocalDocumentStore.open(this.userId, this.workspaceId, this.documentId, 0, this.format);
+      const store = await LocalDocumentStore.open(this.userId, this.workspaceId, this.documentId, this.epoch, this.format);
       if (this.disposed) { await store.close(); return; }
       this.store = store;
       const cached = await store.load();
@@ -116,10 +118,19 @@ export class DocumentProvider {
       const current = await currentUser(controller.signal);
       if (this.disposed || (this.phase as Phase) === 'failed') return;
       if (current.id !== this.userId) { this.fail('The active account changed. Your draft remains on this device.'); return; }
+      const baseline = await documentBaseline(this.workspaceId, this.documentId, controller.signal);
+      if (this.disposed || (this.phase as Phase) === 'failed') return;
+      if (baseline.format !== this.format) throw new Error('Unsupported format');
+      const epoch = integer(baseline.epoch); integer(baseline.head);
+      if (epoch !== this.epoch) { this.epochChanged(epoch); return; }
+      const bytes = await verifiedState(baseline.checkpoint, baseline.sha256, baseline.format);
+      if (this.disposed || (this.phase as Phase) === 'failed') return;
+      Y.applyUpdate(this.doc, bytes, REMOTE);
       this.phase = 'connecting'; this.message = 'Reconnecting…'; this.emit();
       this.connect();
     } catch (error) {
       if (error instanceof ApiError && (error.status === 0 || error.status >= 500)) this.goOffline();
+      else if (error instanceof ApiError && (error.status === 403 || error.status === 404)) this.fail('Access was denied or revoked. Your local draft remains on this device.');
       else this.fail('Your session could not be verified. Your draft remains on this device.');
     } finally { clearTimeout(deadline); this.identityAbort = undefined; this.checkingIdentity = false; }
   }
@@ -206,13 +217,13 @@ export class DocumentProvider {
     if (this.phase !== 'ready' || this.inFlight || !this.pending.length || this.revision !== this.durableRevision) return;
     const next = this.pending[0]!; this.inFlight = true;
     this.saveTimer = setTimeout(() => this.goOffline(), 10000);
-    this.send({ type: 'SUBMIT_UPDATE', version: 1, epoch: 0, updateId: next.id, payload: next.payload });
+    this.send({ type: 'SUBMIT_UPDATE', version: 1, epoch: this.epoch, updateId: next.id, payload: next.payload });
   }
   private requestSync(): void {
     if (this.requestedAfter !== null || this.phase === 'failed') return;
     this.phase = 'syncing'; this.message = 'Synchronizing…'; this.requestedAfter = this.lastApplied; this.emit();
     this.syncTimer = setTimeout(() => this.goOffline(), 10000);
-    this.send({ type: 'SYNC', version: 1, epoch: 0, after: this.requestedAfter });
+    this.send({ type: 'SYNC', version: 1, epoch: this.epoch, after: this.requestedAfter });
   }
   private apply(event: UpdateEvent): void {
     if (event.sequence <= this.lastApplied) return;
@@ -233,8 +244,9 @@ export class DocumentProvider {
       if (typeof value !== 'string' || new TextEncoder().encode(value).byteLength > 16384) throw new Error('Invalid frame');
       const event = record(JSON.parse(value));
       if (event.version !== 1 || typeof event.type !== 'string') throw new Error('Unsupported protocol');
-      if (['HEAD', 'UPDATE', 'SYNC_PAGE', 'SAVED'].includes(event.type) && integer(event.epoch) !== 0) {
-        this.fail('The document version changed. Your local draft remains on this device; copy it before leaving.'); return;
+      if (['HEAD', 'UPDATE', 'SYNC_PAGE', 'SAVED'].includes(event.type) && integer(event.epoch) !== this.epoch) {
+        if (integer(event.epoch) > this.epoch) this.epochChanged(integer(event.epoch));
+        return; // Delayed prior-epoch outbox messages cannot enter the new document.
       }
       if (event.type === 'WELCOME') {
         if (this.phase !== 'connecting' || event.workspaceId !== this.workspaceId) throw new Error('Unexpected workspace');
@@ -245,14 +257,14 @@ export class DocumentProvider {
         clearTimeout(this.connectionTimer);
         this.requestSync();
       } else if (event.type === 'HEAD') {
-        if (event.documentId !== this.documentId || integer(event.epoch) !== 0) throw new Error('Document epoch changed');
+        if (event.documentId !== this.documentId) throw new Error('Unexpected document');
         this.highestSeen = Math.max(this.highestSeen, integer(event.sequence));
         if (this.highestSeen > this.lastApplied) this.requestSync();
       } else if (event.type === 'UPDATE') {
-        if (event.documentId !== this.documentId || integer(event.epoch) !== 0) throw new Error('Document epoch changed');
+        if (event.documentId !== this.documentId) throw new Error('Unexpected document');
         this.apply(this.updateEvent(event));
       } else if (event.type === 'SYNC_PAGE') {
-        if (this.requestedAfter === null || event.documentId !== this.documentId || integer(event.epoch) !== 0 ||
+        if (this.requestedAfter === null || event.documentId !== this.documentId ||
             !Array.isArray(event.updates) || event.updates.length > 8 || typeof event.hasMore !== 'boolean') throw new Error('Invalid replay page');
         const after = integer(event.after), head = integer(event.head);
         let expected = this.requestedAfter;
@@ -267,7 +279,7 @@ export class DocumentProvider {
         if (this.lastApplied < this.highestSeen) this.requestSync();
         else { if (!this.pending.length) this.retryAttempt = 0; this.initialReplayComplete = true; this.phase = 'ready'; this.message = this.pending.length ? 'Saving…' : 'Up to date'; this.emit(); this.persist(); }
       } else if (event.type === 'SAVED') {
-        if (!this.inFlight || !this.pending.length || event.updateId !== this.pending[0]!.id || event.documentId !== this.documentId || integer(event.epoch) !== 0) throw new Error('Unexpected acknowledgement');
+        if (!this.inFlight || !this.pending.length || event.updateId !== this.pending[0]!.id || event.documentId !== this.documentId) throw new Error('Unexpected acknowledgement');
         integer(event.sequence); clearTimeout(this.saveTimer); this.retryAttempt = 0; this.pending.shift();
         this.message = this.pending.length ? 'Saving…' : 'Confirming local state…'; this.emit();
         const acknowledgedSocket = this.socket;
@@ -279,7 +291,13 @@ export class DocumentProvider {
       } else if (event.type === 'REJECTED') {
         if (event.code === 'ENGINE_UNAVAILABLE' || event.code === 'RETRY_HEAD_CHANGED') { this.goOffline(); return; }
         if (event.code === 'DOCUMENT_LIMIT') this.fail('This document has reached a server limit. Your local draft was not saved to the server; copy it before leaving.');
-        else if (event.code === 'EPOCH_CHANGED' || event.code === 'SCHEMA_UNSUPPORTED') this.fail('The document version changed or its format is unsupported. Your local draft remains on this device; copy it before leaving.');
+        else if (event.code === 'EPOCH_CHANGED') {
+          this.epochChanged();
+          void documentBaseline(this.workspaceId, this.documentId).then(baseline => {
+            if (!this.disposed && baseline.format === this.format && integer(baseline.epoch) > this.epoch) { this.nextEpoch = baseline.epoch; this.emit(); }
+          }).catch(() => {});
+        }
+        else if (event.code === 'SCHEMA_UNSUPPORTED') this.fail('The document format is unsupported. Your local draft remains on this device; copy it before leaving.');
         else if (event.code === 'ACCESS_DENIED' || event.code === 'NOT_FOUND' || event.code === 'DOCUMENT_ARCHIVED')
           this.fail('The server rejected access or the document is unavailable. Your local draft remains on this device.');
         else this.fail('The server rejected the update. Your local draft remains on this device; copy it before leaving.');
@@ -300,6 +318,14 @@ export class DocumentProvider {
     if (previous && (previous.readyState === WebSocket.OPEN || previous.readyState === WebSocket.CONNECTING)) previous.close();
     this.scheduleRetry();
   }
+  private epochChanged(epoch?: number): void {
+    this.nextEpoch = epoch;
+    this.fail('A revision was restored. This older local draft is quarantined and will not be uploaded.');
+  }
+  async retainDraft(): Promise<void> {
+    if (this.store && this.hasLocalState) await this.store.save({ version: 1, state: Y.encodeStateAsUpdate(this.doc), pending: this.pending });
+  }
+  noticeRestored(epoch: number): void { this.epochChanged(integer(epoch)); }
   private fail(message: string): void {
     if (this.disposed || this.phase === 'failed') return;
     clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer); clearTimeout(this.retryTimer);
@@ -357,7 +383,7 @@ export class DocumentProvider {
   }
   private clearPresence(): void { if (this.presence.size) { this.presence.clear(); this.emitPresence(); } }
   private emitPresence(): void { const snapshot = [...this.presence.values()]; for (const listener of this.presenceListeners) listener(snapshot); }
-  private emit(): void { if (!this.disposed) this.changed({ phase: this.phase, text: this.text?.toString() ?? '', pending: this.pending.length, message: this.message, hasLocalState: this.hasLocalState }); }
+  private emit(): void { if (!this.disposed) this.changed({ phase: this.phase, text: this.text?.toString() ?? '', pending: this.pending.length, message: this.message, hasLocalState: this.hasLocalState, nextEpoch: this.nextEpoch }); }
   destroy(): void {
     this.disposed = true; this.identityAbort?.abort(); clearInterval(this.presenceTimer); clearTimeout(this.presenceSendTimer); clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer); clearTimeout(this.retryTimer); window.removeEventListener('online', this.onOnline); window.removeEventListener('offline', this.onOffline); this.text?.unobserve(this.onText); this.doc.off('update', this.onUpdate);
     this.doc.destroy(); this.socket?.close();

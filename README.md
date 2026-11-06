@@ -1,6 +1,6 @@
 # Collaborative Workspace — learning and implementation plan
 
-Status: Lessons 1–30 are implemented as local learning milestones. Stored users can log in, manage workspace membership, and create, read, list, rename and archive authorized workspace documents. A bounded collaboration prototype supports locally persisted drafts, automatic reconnection, ephemeral presence, verified checkpoints and named revisions with read-only preview. Lesson 27's rich-text path remains behind a default-off feature gate because its security and history limits are unresolved; it is not production-ready.
+Status: Lessons 1–31 are implemented as local learning milestones. Stored users can log in, manage workspace membership, and create, read, list, rename and archive authorized workspace documents. A bounded collaboration prototype supports locally persisted drafts, automatic reconnection, ephemeral presence, verified checkpoints and named revisions with read-only preview and safe epoch-based restore. Lesson 27's rich-text path remains behind a default-off feature gate because its security and history limits are unresolved; it is not production-ready.
 
 We will assume no prior experience with Spring and explain Java concepts whenever they are needed. We will implement one feature per lesson and verify it before moving on. The goal is a project you can build, debug, and defend in an interview.
 
@@ -35,6 +35,7 @@ The supplied attachment is the project brief. We will provide the beginner-frien
 | [Lesson 28: Collaborator presence](docs/lessons/28-collaborator-presence.md) | Authenticated, bounded ephemeral cursors and expiry |
 | [Lesson 29: Verified checkpoints](docs/lessons/29-verified-checkpoints.md) | Checksum-verified committed prefixes with retained history and concurrent tails |
 | [Lesson 30: Named revisions](docs/lessons/30-named-revisions.md) | Immutable committed snapshots, safe retries, authorized listing and preview |
+| [Lesson 31: Safe revision restore](docs/lessons/31-safe-revision-restore.md) | Fresh history, atomic epoch transitions and quarantined local draft recovery |
 | [Quality review fixes](docs/09-quality-hardening.md) | Strict versions, test isolation, consistent errors, safe retries and bounded lists |
 | [Offline and reconnect security checkpoint](docs/12-offline-reconnect-security-checkpoint.md) | Verified boundaries and outstanding risks through Lesson 26 |
 | [Current API endpoints](docs/08-api-endpoints.md) | Methods, routes, access requirements and current routes, authorization and response details |

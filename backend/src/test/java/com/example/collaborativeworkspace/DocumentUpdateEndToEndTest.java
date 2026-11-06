@@ -50,8 +50,105 @@ class DocumentUpdateEndToEndTest {
     @Autowired DocumentUpdateService updateService;
     @Autowired DocumentCheckpointService checkpointService;
     @Autowired DocumentRevisionService revisionService;
+    @Autowired DocumentRestoreService restoreService;
     @Autowired tools.jackson.databind.json.JsonMapper json;
     static Process engine;
+
+    @Test void restoresOrderAgainstConcurrentEditsAndKeepOldHistory() throws Exception {
+        UUID actor = UUID.randomUUID(), workspace = null;
+        String email = "restore-" + actor + "@example.com";
+        var entered = new java.util.concurrent.CountDownLatch(1); var release = new java.util.concurrent.CountDownLatch(1);
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "restore-race"));
+        try {
+            users.create(actor, email, encoder.encode("test-user-password")); workspace = workspaces.create(email, "Restore ordering").id();
+            UUID document = documents.create(workspace, email, "Restore ordering").id(), selected = workspace;
+            var fixture = new Properties();
+            try (var reader = java.nio.file.Files.newBufferedReader(Path.of("..", "experiments", "yjs-private-engine", "fixtures", "dependency-order.properties"))) { fixture.load(reader); }
+            byte[] first = Base64.getDecoder().decode(fixture.getProperty("first")), second = Base64.getDecoder().decode(fixture.getProperty("dependent"));
+            updateService.submit(workspace, document, actor, 0, UUID.randomUUID(), first, () -> true);
+            var revision = revisionService.create(workspace, document, actor, new CreateRevisionRequest("Original", UUID.randomUUID()), () -> true);
+            var stale = new RestoreRevisionRequest(revision.id(), UUID.randomUUID(), 0L, 1L);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                if (Thread.currentThread().getName().equals("restore-race")) { entered.countDown(); if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Restore race timed out"); }
+                return invocation.callRealMethod();
+            }).when(engineClient).freshState(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(byte[].class));
+            var future = executor.submit(() -> restoreService.restore(selected, document, actor, stale, () -> true));
+            assertTrue(entered.await(10, TimeUnit.SECONDS));
+            updateService.submit(workspace, document, actor, 0, UUID.randomUUID(), second, () -> true); release.countDown();
+            var failure = assertThrows(java.util.concurrent.ExecutionException.class, () -> future.get(20, TimeUnit.SECONDS));
+            assertEquals("HEAD_CHANGED", ((RevisionException) failure.getCause()).code());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_restore_events WHERE document_id=?", Integer.class, document));
+            var request = new RestoreRevisionRequest(revision.id(), UUID.randomUUID(), 0L, 2L);
+            var restored = restoreService.restore(workspace, document, actor, request, () -> true);
+            assertEquals(1, restored.epoch()); assertEquals(restored.id(), restoreService.restore(workspace, document, actor, request, () -> true).id());
+            assertEquals("REVISION_ID_CONFLICT", assertThrows(RevisionException.class, () -> restoreService.restore(selected, document, actor,
+                    new RestoreRevisionRequest(revision.id(), request.requestId(), 0L, 1L), () -> true)).code());
+            var baseline = restoreService.baseline(workspace, document, actor);
+            assertEquals(1, baseline.epoch()); assertEquals(0, baseline.head());
+            byte[] fresh = Base64.getDecoder().decode(baseline.checkpoint());
+            assertEquals(engineClient.reconstruct(java.util.List.of(first)).text(), engineClient.reconstruct(java.util.List.of(fresh)).text());
+            assertFalse(java.util.Arrays.equals(first, fresh));
+            assertEquals("EPOCH_CHANGED", assertThrows(DocumentUpdateException.class, () -> updateService.submit(selected, document, actor, 0, UUID.randomUUID(), second, () -> true)).code());
+            assertArrayEquals(fresh, checkpointService.create(workspace, document, actor).checkpoint().bytes());
+            assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM document_updates WHERE document_id=? AND epoch=0", Integer.class, document));
+            assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM document_update_outbox WHERE document_id=? AND epoch=0", Integer.class, document));
+            assertEquals(1, revisionService.preview(workspace, document, actor, revision.id()).summary().throughSequence());
+
+            // Opposite ordering: a validated writer must recheck epoch after the restore wins the lock.
+            var writeEntered = new java.util.concurrent.CountDownLatch(1); var writeRelease = new java.util.concurrent.CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                if (Thread.currentThread().getName().equals("restore-race")) { writeEntered.countDown(); if (!writeRelease.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Writer race timed out"); }
+                return invocation.callRealMethod();
+            }).when(engineClient).reconstruct(org.mockito.ArgumentMatchers.anyList());
+            var writer = executor.submit(() -> updateService.submit(selected, document, actor, 1, UUID.randomUUID(), new byte[] {0, 0}, () -> true));
+            try {
+                assertTrue(writeEntered.await(10, TimeUnit.SECONDS));
+                assertEquals(2, restoreService.restore(workspace, document, actor, new RestoreRevisionRequest(revision.id(), UUID.randomUUID(), 1L, 0L), () -> true).epoch());
+            } finally { writeRelease.countDown(); }
+            var writerFailure = assertThrows(java.util.concurrent.ExecutionException.class, () -> writer.get(20, TimeUnit.SECONDS));
+            assertEquals("EPOCH_CHANGED", ((DocumentUpdateException) writerFailure.getCause()).code());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_updates WHERE document_id=? AND epoch>0", Integer.class, document));
+        } finally {
+            release.countDown(); executor.shutdownNow(); executor.awaitTermination(5, TimeUnit.SECONDS);
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id=?", actor);
+        }
+    }
+
+    @Test void restoreRechecksMembershipAndSessionAfterEngineValidation() throws Exception {
+        UUID owner = UUID.randomUUID(), editor = UUID.randomUUID(), workspace = null;
+        String email = "restore-owner-" + owner + "@example.com", editorEmail = "restore-editor-" + editor + "@example.com";
+        try {
+            users.create(owner, email, encoder.encode("test-user-password")); users.create(editor, editorEmail, encoder.encode("test-user-password"));
+            workspace = workspaces.create(email, "Restore authorization").id(); UUID selected = workspace;
+            membership.setRole(workspace, email, new ChangeWorkspaceMemberRequest(editorEmail, WorkspaceRole.EDITOR));
+            UUID document = documents.create(workspace, email, "Restore authorization").id();
+            var revision = revisionService.create(workspace, document, owner, new CreateRevisionRequest("Empty", UUID.randomUUID()), () -> true);
+            for (boolean revoke : new boolean[] {true, false}) {
+                var entered = new java.util.concurrent.CountDownLatch(1); var release = new java.util.concurrent.CountDownLatch(1);
+                var valid = new java.util.concurrent.atomic.AtomicBoolean(true);
+                var executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "restore-access"));
+                org.mockito.Mockito.doAnswer(invocation -> {
+                    if (Thread.currentThread().getName().equals("restore-access")) { entered.countDown(); if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Restore access timed out"); }
+                    return invocation.callRealMethod();
+                }).when(engineClient).freshState(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(byte[].class));
+                try {
+                    var future = executor.submit(() -> restoreService.restore(selected, document, revoke ? editor : owner,
+                            new RestoreRevisionRequest(revision.id(), UUID.randomUUID(), 0L, 0L), valid::get));
+                    assertTrue(entered.await(10, TimeUnit.SECONDS));
+                    if (revoke) membership.setRole(workspace, email, new ChangeWorkspaceMemberRequest(editorEmail, WorkspaceRole.VIEWER));
+                    else valid.set(false);
+                    release.countDown();
+                    var error = assertThrows(java.util.concurrent.ExecutionException.class, () -> future.get(20, TimeUnit.SECONDS));
+                    assertEquals("ACCESS_DENIED", ((RevisionException) error.getCause()).code());
+                } finally { release.countDown(); executor.shutdownNow(); executor.awaitTermination(5, TimeUnit.SECONDS); }
+            }
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_restore_events WHERE document_id=?", Integer.class, document));
+        } finally {
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id IN (?, ?)", owner, editor);
+        }
+    }
 
     @Test void revisionCapturesFixedHeadSurvivesLaterEditsAndChecksIntegrity() throws Exception {
         UUID ownerId = UUID.randomUUID(), outsiderId = UUID.randomUUID(), workspace = null;
@@ -460,6 +557,23 @@ class DocumentUpdateEndToEndTest {
             assertEquals(200, read.statusCode()); assertTrue(read.headers().firstValue("Cache-Control").orElse("").contains("no-store"));
             assertEquals("PLAIN_TEXT_V1", json.readTree(read.body()).path("format").asText());
             assertEquals(404, get(outsiderClient, path + "/latest").statusCode());
+            String documentPath = base + "/api/workspaces/" + workspace + "/documents/" + document;
+            String restoreJson = json.writeValueAsString(new RestoreRevisionRequest(UUID.fromString(revisionId), UUID.randomUUID(), 0L, 0L));
+            var restorePost = HttpRequest.newBuilder(URI.create(documentPath + "/restore")).header("Content-Type", "application/json")
+                    .header("X-CSRF-TOKEN", ownerToken).POST(HttpRequest.BodyPublishers.ofString(restoreJson)).build();
+            assertEquals(403, ownerClient.send(HttpRequest.newBuilder(URI.create(documentPath + "/restore")).header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(restoreJson)).build(), HttpResponse.BodyHandlers.discarding()).statusCode());
+            assertEquals(403, viewerClient.send(HttpRequest.newBuilder(URI.create(documentPath + "/restore")).header("Content-Type", "application/json")
+                    .header("X-CSRF-TOKEN", viewerToken).POST(HttpRequest.BodyPublishers.ofString(restoreJson)).build(), HttpResponse.BodyHandlers.discarding()).statusCode());
+            assertEquals(404, get(outsiderClient, documentPath + "/baseline").statusCode());
+            assertEquals(400, ownerClient.send(HttpRequest.newBuilder(URI.create(documentPath + "/restore")).header("Content-Type", "application/json")
+                    .header("X-CSRF-TOKEN", ownerToken).POST(HttpRequest.BodyPublishers.ofString("{}")).build(), HttpResponse.BodyHandlers.discarding()).statusCode());
+            var restored = ownerClient.send(restorePost, HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, restored.statusCode()); assertTrue(restored.headers().firstValue("Cache-Control").orElse("").contains("no-store"));
+            assertEquals(1, json.readTree(restored.body()).path("epoch").longValue());
+            var baseline = get(viewerClient, documentPath + "/baseline");
+            assertEquals(200, baseline.statusCode()); assertTrue(baseline.headers().firstValue("Cache-Control").orElse("").contains("no-store"));
+            assertEquals(1, json.readTree(baseline.body()).path("epoch").longValue());
         } finally {
             if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
             jdbc.update("DELETE FROM app_users WHERE id IN (?, ?, ?)", ownerId, viewerId, outsiderId);

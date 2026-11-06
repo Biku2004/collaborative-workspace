@@ -1,4 +1,4 @@
-# API endpoint reference through Lesson 30
+# API endpoint reference through Lesson 31
 
 This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 
@@ -24,6 +24,8 @@ This table describes the currently implemented routes, not the planned collabora
 | POST | `/api/workspaces/{workspaceId}/documents/{documentId}/revisions` | Save a named committed state | Owner or editor, with CSRF | JSON `name` (1–100 characters without controls) and UUID `requestId`; returns 201 with immutable metadata. A same-name retry returns the original revision; an ID/name conflict returns 409. |
 | GET | `/api/workspaces/{workspaceId}/documents/{documentId}/revisions` | List named revision metadata | Current member of the active document's workspace | Returns `items` and `nextCursor`, newest first. `limit` is 1–100, default 20; `cursor` is document-scoped. |
 | GET | `/api/workspaces/{workspaceId}/documents/{documentId}/revisions/{revisionId}` | Preview a standalone revision | Current member of the active document's workspace | Returns `revision` metadata, Base64 `checkpoint` and `sha256`, with `no-store`; inaccessible resources return 404 and invalid bytes fail verification. |
+| GET | `/api/workspaces/{workspaceId}/documents/{documentId}/baseline` | Negotiate the current epoch and fetch its sequence-zero state | Current member of the active document's workspace | Returns `epoch`, observed `head`, `format`, Base64 `checkpoint` and `sha256`, with `no-store`. Verify the baseline before replaying this epoch's socket updates from zero. |
+| POST | `/api/workspaces/{workspaceId}/documents/{documentId}/restore` | Restore a revision into a fresh epoch | Owner or editor, session and CSRF | JSON UUID `revisionId`, UUID `requestId`, nonnegative `expectedEpoch` and `expectedHead`. Returns 200 with audit `id`, `revisionId`, `fromEpoch`, `fromSequence` and new `epoch`. Same-input retries return the original event. Stale boundary or conflicting input returns 409; snapshot service busy returns 503. |
 | POST | `/api/documents` | Former unscoped creation route | Removed | Returns 404 for an authenticated request with valid CSRF. |
 | GET | `/api/documents/{id}` | Read one document | Any current workspace member | Returns 200 with document metadata, including archived documents; missing, unassigned, and inaccessible documents return 404. |
 | GET | `/api/workspaces/{workspaceId}/documents` | List documents in a workspace | Any current workspace member | Returns 200 with active `items` and `nextCursor`; accepts `limit` (1–100, default 20) and optional `cursor`. Inaccessible workspace gives 404, invalid page parameters give 400. |

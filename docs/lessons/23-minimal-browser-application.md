@@ -22,9 +22,9 @@ The proxy is a local-development arrangement, not a production deployment. Both 
 
 1. `frontend/package.json` and `package-lock.json` pin React, TypeScript, Vite and the browser test tools. `npm ci` installs the lockfile.
 2. `frontend/vite.config.ts` serves the UI at `http://127.0.0.1:5173` and proxies `/api`, `/login`, `/logout` and the future WebSocket path to `http://127.0.0.1:8080`. The optional `WORKSPACE_PROXY_TARGET` must be an explicit loopback HTTP origin with a port; it is a local server setting, not a browser secret.
-3. `frontend/src/api.ts` fetches CSRF tokens, submits the login form, checks `/api/me`, logs out with CSRF and reads workspace/document pages. A manual redirect is followed by an explicit `/api/me` check, so a login redirect alone is not treated as success.
-4. `frontend/src/App.tsx` manages the login and list states, checks the current session on page load, shows errors and prevents stale list responses from replacing a newer workspace selection. React renders user-provided titles as text.
-5. `frontend/src/styles.css` provides the responsive layout and visible keyboard focus. `frontend/index.html` and `src/main.ts` mount the application.
+3. `frontend/src/lib/api.ts` fetches CSRF tokens, submits the login form, checks `/api/me`, logs out with CSRF and reads workspace/document pages. A manual redirect is followed by an explicit `/api/me` check, so a login redirect alone is not treated as success.
+4. `frontend/src/app/App.tsx` manages the login and list states, checks the current session on page load, shows errors and prevents stale list responses from replacing a newer workspace selection. React renders user-provided titles as text.
+5. `frontend/src/app/styles.css` provides the responsive layout and visible keyboard focus. `frontend/index.html` and `src/main.ts` mount the application.
 6. `BrowserWorkspaceIntegrationTest.java` starts the actual backend with the dedicated test database, starts a Vite process on a temporary loopback port and runs `frontend/test/workspace.spec.ts` in Chromium. It creates and removes only its own test data.
 
 ## 3. Start the backend

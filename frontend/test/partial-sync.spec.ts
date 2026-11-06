@@ -14,8 +14,8 @@ test('a first synchronization interrupted mid-replay is not an offline editing b
   await page.route('**/api/me', route => route.fulfill({ status: 200, json: { username: 'test@example.com', id: user } }));
   await page.goto('/');
   await page.evaluate(async ({ user, workspace, document }) => {
-    const path = '/src/provider.ts';
-    const { DocumentProvider } = await import(/* @vite-ignore */ path) as typeof import('../src/provider');
+    const path = '/src/features/editor/provider.ts';
+    const { DocumentProvider } = await import(/* @vite-ignore */ path) as typeof import('../src/features/editor/provider');
     const hooks = window as unknown as Window & { phase: string; drop: () => void; requestedSecondPage: boolean };
     class FakeSocket {
       static readonly OPEN = 1;
@@ -53,12 +53,12 @@ test('a complete cached draft stays editable during repair while uploads wait', 
   await page.route('**/api/me', route => route.fulfill({ status: 200, json: { username: 'test@example.com', id: user } }));
   await page.goto('/');
   await page.evaluate(async ({ user, workspace, document, initial }) => {
-    const storagePath = '/src/localDocumentStore.ts', providerPath = '/src/provider.ts';
-    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/localDocumentStore');
-    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
+    const storagePath = '/src/features/offline/localDocumentStore.ts', providerPath = '/src/features/editor/provider.ts';
+    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/features/offline/localDocumentStore');
+    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/features/editor/provider');
     const store = await LocalDocumentStore.open(user, workspace, document, 0);
     await store.save({ version: 1, state: Uint8Array.from(atob(initial), c => c.charCodeAt(0)), pending: [] }); await store.close();
-    const hooks = window as unknown as { repairState: import('../src/provider').EditorState; sentDuringRepair: number; edit: (text?: string) => void; finishRepair: () => void; stopRepair: () => void };
+    const hooks = window as unknown as { repairState: import('../src/features/editor/provider').EditorState; sentDuringRepair: number; edit: (text?: string) => void; finishRepair: () => void; stopRepair: () => void };
     hooks.sentDuringRepair = 0;
     class FakeSocket {
       static readonly OPEN = 1; static readonly CONNECTING = 0; readyState = 1; bufferedAmount = 0;
@@ -102,9 +102,9 @@ test('an epoch change rejects reconciliation before pending updates are sent', a
   await page.route('**/api/me', route => route.fulfill({ status: 200, json: { username: 'test@example.com', id: user } }));
   await page.goto('/');
   await page.evaluate(async ({ user, workspace, document, id }) => {
-    const storagePath = '/src/localDocumentStore.ts', providerPath = '/src/provider.ts';
-    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/localDocumentStore');
-    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
+    const storagePath = '/src/features/offline/localDocumentStore.ts', providerPath = '/src/features/editor/provider.ts';
+    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/features/offline/localDocumentStore');
+    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/features/editor/provider');
     const store = await LocalDocumentStore.open(user, workspace, document, 0);
     await store.save({ version: 1, state: new Uint8Array([0, 0]), pending: [{ id, payload: 'AAA=' }] });
     await store.close();
@@ -151,9 +151,9 @@ test('a repeatedly unavailable update engine increases retry delays after succes
   await page.route('**/api/me', route => route.fulfill({ status: 200, json: { username: 'test@example.com', id: user } }));
   await page.goto('/');
   await page.evaluate(async ({ user, workspace, document, id }) => {
-    const storagePath = '/src/localDocumentStore.ts', providerPath = '/src/provider.ts';
-    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/localDocumentStore');
-    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
+    const storagePath = '/src/features/offline/localDocumentStore.ts', providerPath = '/src/features/editor/provider.ts';
+    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/features/offline/localDocumentStore');
+    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/features/editor/provider');
     const store = await LocalDocumentStore.open(user, workspace, document, 0);
     await store.save({ version: 1, state: new Uint8Array([0, 0]), pending: [{ id, payload: 'AAA=' }] });
     await store.close();
@@ -202,9 +202,9 @@ test('a socket authenticated as a different account cannot join or submit a save
   await page.route('**/api/me', route => route.fulfill({ status: 200, json: { username: 'test@example.com', id: user } }));
   await page.goto('/');
   await page.evaluate(async ({ user, other, workspace, document, id }) => {
-    const storagePath = '/src/localDocumentStore.ts', providerPath = '/src/provider.ts';
-    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/localDocumentStore');
-    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
+    const storagePath = '/src/features/offline/localDocumentStore.ts', providerPath = '/src/features/editor/provider.ts';
+    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/features/offline/localDocumentStore');
+    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/features/editor/provider');
     const store = await LocalDocumentStore.open(user, workspace, document, 0);
     await store.save({ version: 1, state: new Uint8Array([0, 0]), pending: [{ id, payload: 'AAA=' }] });
     await store.close();
@@ -244,8 +244,8 @@ test('a rich client negotiates its format without creating the plain-text root',
   await page.route('**/api/me', route => route.fulfill({ status: 200, json: { username: 'test@example.com', id: user } }));
   await page.goto('/');
   await page.evaluate(async ({ user, workspace, document }) => {
-    const path = '/src/provider.ts';
-    const { DocumentProvider } = await import(/* @vite-ignore */ path) as typeof import('../src/provider');
+    const path = '/src/features/editor/provider.ts';
+    const { DocumentProvider } = await import(/* @vite-ignore */ path) as typeof import('../src/features/editor/provider');
     const hooks = window as unknown as Window & { phase: string; requested?: string; roots: string[] };
     class FakeSocket {
       static readonly OPEN = 1;
@@ -284,9 +284,9 @@ test('a document limit rejection keeps the pending local draft and explains the 
   await page.route('**/api/me', route => route.fulfill({ status: 200, json: { username: 'test@example.com', id: user } }));
   await page.goto('/');
   await page.evaluate(async ({ user, workspace, document }) => {
-    const storagePath = '/src/localDocumentStore.ts', providerPath = '/src/provider.ts';
-    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/localDocumentStore');
-    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
+    const storagePath = '/src/features/offline/localDocumentStore.ts', providerPath = '/src/features/editor/provider.ts';
+    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/features/offline/localDocumentStore');
+    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/features/editor/provider');
     const store = await LocalDocumentStore.open(user, workspace, document, 0);
     await store.save({ version: 1, state: new Uint8Array([0, 0]), pending: [{ id: '40000000-0000-4000-8000-000000000051', payload: 'AAA=' }] });
     await store.close();

@@ -64,9 +64,9 @@ Requests that use the session, including background calls, may extend its idle l
 
 ## 5. Files changed
 
-1. `backend/src/main/java/com/example/collaborativeworkspace/SecurityConfiguration.java` — explicit Spring Security logout configuration.
+1. `backend/src/main/java/com/example/collaborativeworkspace/auth/SecurityConfiguration.java` — explicit Spring Security logout configuration.
 2. `backend/src/main/resources/application-dev.properties` — 30-minute development idle timeout.
-3. `backend/src/test/java/com/example/collaborativeworkspace/SessionLifecycleIntegrationTest.java` — real HTTP tests of logout, CSRF, session isolation, replay, and expiry.
+3. `backend/src/test/java/com/example/collaborativeworkspace/auth/SessionLifecycleIntegrationTest.java` — real HTTP tests of logout, CSRF, session isolation, replay, and expiry.
 
 The test uses a **test-only** controller to shorten one session's timeout to one second. That controller exists only under `src/test`; it is not part of the application. This permits a real expiry test without waiting 30 minutes. A separate assertion checks that the normal configured timeout is 1,800 seconds.
 

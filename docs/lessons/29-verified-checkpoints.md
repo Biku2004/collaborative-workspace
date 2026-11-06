@@ -22,7 +22,7 @@ The checksum answers a narrower question: “Are these the same bytes that were 
 
 ## Code and verification
 
-The migration is [V15](../../backend/src/main/resources/db/migration/V15__verified_document_checkpoints.sql); the implementation is in [DocumentCheckpointService](../../backend/src/main/java/com/example/collaborativeworkspace/DocumentCheckpointService.java), [DocumentCheckpointRepository](../../backend/src/main/java/com/example/collaborativeworkspace/DocumentCheckpointRepository.java) and [DocumentCheckpointController](../../backend/src/main/java/com/example/collaborativeworkspace/DocumentCheckpointController.java). The endpoint uses the existing session and CSRF protections. A viewer may read an authorized snapshot but cannot create one, and a nonmember gets a hidden-resource response.
+The migration is [V15](../../backend/src/main/resources/db/migration/V15__verified_document_checkpoints.sql); the implementation is in [DocumentCheckpointService](../../backend/src/main/java/com/example/collaborativeworkspace/documents/history/DocumentCheckpointService.java), [DocumentCheckpointRepository](../../backend/src/main/java/com/example/collaborativeworkspace/documents/history/DocumentCheckpointRepository.java) and [DocumentCheckpointController](../../backend/src/main/java/com/example/collaborativeworkspace/documents/history/DocumentCheckpointController.java). The endpoint uses the existing session and CSRF protections. A viewer may read an authorized snapshot but cannot create one, and a nonmember gets a hidden-resource response.
 
 To run the real-engine and migration checks with the dedicated test database:
 

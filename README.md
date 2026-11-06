@@ -8,6 +8,8 @@ The supplied attachment is the project brief. We will provide the beginner-frien
 
 ## Read in this order
 
+See the [repository structure guide](docs/13-repository-structure.md) to locate backend features, browser modules and tests.
+
 | Guide | What it gives you |
 |---|---|
 | [0. One-feature-at-a-time checklist](docs/00-learning-checklist.md) | What we do first, what comes next, and the local PostgreSQL setup |

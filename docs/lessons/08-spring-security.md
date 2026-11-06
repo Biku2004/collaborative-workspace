@@ -40,10 +40,10 @@ With the `dev` profile, `GET /api/status` and `GET /api/csrf` are public. An ano
 The complete, runnable source is in the project, so you can open each file alongside this explanation:
 
 1. `backend/pom.xml` adds `spring-boot-starter-security`. Spring Boot manages its compatible library versions.
-2. `backend/src/main/java/com/example/collaborativeworkspace/SecurityConfiguration.java` defines the security filter chains, the development account and the BCrypt encoder.
-3. `backend/src/main/java/com/example/collaborativeworkspace/CsrfController.java` exposes the token and its header name for a same-origin client. It uses `Cache-Control: no-store`.
+2. `backend/src/main/java/com/example/collaborativeworkspace/auth/SecurityConfiguration.java` defines the security filter chains, the development account and the BCrypt encoder.
+3. `backend/src/main/java/com/example/collaborativeworkspace/auth/CsrfController.java` exposes the token and its header name for a same-origin client. It uses `Cache-Control: no-store`.
 4. `backend/src/main/resources/application-dev.properties` binds the dev server to `127.0.0.1` and configures `HttpOnly` and `SameSite=Lax` for the session cookie.
-5. `backend/src/test/java/com/example/collaborativeworkspace/DocumentHttpIntegrationTest.java` exercises the actual login, CSRF, API and PostgreSQL flow. `ClosedByDefaultIntegrationTest.java` verifies that the default profile denies document access.
+5. `backend/src/test/java/com/example/collaborativeworkspace/documents/DocumentHttpIntegrationTest.java` exercises the actual login, CSRF, API and PostgreSQL flow. `ClosedByDefaultIntegrationTest.java` verifies that the default profile denies document access.
 
 ### Read `SecurityConfiguration.java` in order
 

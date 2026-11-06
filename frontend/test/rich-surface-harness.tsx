@@ -2,7 +2,7 @@ import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as Y from 'yjs';
 import contract from '@workspace/rich-text-schema-v1/contract.json';
-import RichTextSurface from '../src/RichTextSurface';
+import RichTextSurface from '../src/features/editor/rich/RichTextSurface';
 
 /** Test-only in-memory transport; the end-to-end server test is a separate gate. */
 export function mountRichSurfaceHarness(element: HTMLElement) {

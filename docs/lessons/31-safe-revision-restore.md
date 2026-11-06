@@ -39,7 +39,7 @@ In Named revisions, select a preview, choose **Review restore**, inspect the rev
 - `V17__document_restore_events.sql`: actor-scoped idempotency and retained source/boundary metadata. No destructive migration or history pruning.
 - `YjsEngineClient` and `experiments/yjs-private-engine/src/freshState.ts`: bounded conversion to fresh history.
 - `DocumentCheckpointService`: reconstruction from a new epoch's sequence-zero baseline.
-- `frontend/src/provider.ts`, `Editor.tsx`, `epochHint.ts`, `LocalDraftPreview.tsx` and `RevisionsPanel.tsx`: fixed-epoch editing, explicit replacement and disconnected local recovery.
+- `frontend/src/features/editor/provider.ts`, `Editor.tsx`, `epochHint.ts`, `LocalDraftPreview.tsx` and `RevisionsPanel.tsx`: fixed-epoch editing, explicit replacement and disconnected local recovery.
 - `verifiedState.ts`: shared size/checksum verification for baseline and revision preview.
 
 ## Run and verify

@@ -30,8 +30,8 @@ This implementation currently supports epoch 0 only. If the server reports anoth
 
 ## Walk through the code
 
-- `frontend/src/provider.ts`: `attemptConnection` checks `/api/me`; `scheduleRetry` controls backoff; `connect` sets up the socket and ignores events from older sockets; `goOffline` clears in-flight state without discarding pending updates. `WELCOME`, `JOINED`, `SYNC_PAGE` and `SAVED` advance the protocol.
-- `frontend/src/Editor.tsx`: the `waiting` state explains why an incomplete first copy cannot be edited; `offline` permits local editing with a durability warning.
+- `frontend/src/features/editor/provider.ts`: `attemptConnection` checks `/api/me`; `scheduleRetry` controls backoff; `connect` sets up the socket and ignores events from older sockets; `goOffline` clears in-flight state without discarding pending updates. `WELCOME`, `JOINED`, `SYNC_PAGE` and `SAVED` advance the protocol.
+- `frontend/src/features/editor/Editor.tsx`: the `waiting` state explains why an incomplete first copy cannot be edited; `offline` permits local editing with a durability warning.
 - `frontend/test/a-reconnect.spec.ts`: independent users start from the same server document, disconnect, make concurrent delete-only and insertion edits, reconnect without reloading and converge. A subsequent revoked member's pending work must not be uploaded.
 - `frontend/test/partial-sync.spec.ts`: interruption during the first replay does not enable editing on an incomplete baseline. A simulated changed epoch rejects reconciliation before the pending ID is sent.
 - The integration fixture runs these browser flows against the actual local Java service, private Node Yjs engine and dedicated PostgreSQL test database. The simulation for the epoch mismatch is a protocol-level test; it is not a full restore implementation.

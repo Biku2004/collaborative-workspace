@@ -21,7 +21,7 @@ HTTP GET + session cookie
 
 Read the code in this order (paths are relative to the repository root):
 
-1. `backend/src/main/java/com/example/collaborativeworkspace/DocumentController.java` and `WorkspaceDocumentController.java`: HTTP routes, authenticated identity, and `Cache-Control: no-store` on successful reads.
+1. `backend/src/main/java/com/example/collaborativeworkspace/documents/DocumentController.java` and `WorkspaceDocumentController.java`: HTTP routes, authenticated identity, and `Cache-Control: no-store` on successful reads.
 2. `DocumentService.java`: resolves the user from the session, applies page bounds and converts query results into a page.
 3. `DocumentRepository.java`: SQL that joins membership to the document or workspace. The authorization check is part of the query that retrieves the data.
 4. `DocumentCursor.java` and `DocumentPage.java`: cursor encoding/validation and response structure.

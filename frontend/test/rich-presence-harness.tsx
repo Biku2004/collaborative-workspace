@@ -1,8 +1,8 @@
 import { createRoot } from 'react-dom/client';
 import * as Y from 'yjs';
 import contract from '@workspace/rich-text-schema-v1/contract.json';
-import RichTextSurface from '../src/RichTextSurface';
-import type { Presence } from '../src/provider';
+import RichTextSurface from '../src/features/editor/rich/RichTextSurface';
+import type { Presence } from '../src/features/editor/provider';
 
 let notify: (() => void) | undefined;
 

@@ -29,7 +29,7 @@ The complete code is in `experiments/yjs-private-engine`:
 4. `src/worker.ts` calls `reconstruct.ts` in a worker thread. The worker receives only the supplied updates; it has no shared document cache.
 5. `src/reconstruct.ts` reads updates with a bounded decoder, rejects trailing bytes, checks for pending dependencies and unsupported content, and returns text and an encoded checkpoint. The document is destroyed afterward.
 6. `test/engine.test.ts` sends real HTTP requests and checks reconstruction and failures. `test/hanging-worker.ts` lets the timeout and capacity tests reproduce a stuck worker.
-7. `fixtures/plain-text.properties` is shared by Node and `backend/src/test/java/com/example/collaborativeworkspace/YjsFixtureTransportTest.java`. Java's standard Base64 decoder/encoder preserves the fixture bytes; Node interprets them as Yjs and obtains `Hello Java`.
+7. `fixtures/plain-text.properties` is shared by Node and `backend/src/test/java/com/example/collaborativeworkspace/collaboration/engine/YjsFixtureTransportTest.java`. Java's standard Base64 decoder/encoder preserves the fixture bytes; Node interprets them as Yjs and obtains `Hello Java`.
 
 **Version-sensitive detail:** the missing-dependency check uses Yjs's internal `doc.store.pendingStructs` and `pendingDs`, and the root map check uses an internal field. These are not stable public APIs. Yjs is pinned, and tests cover a missing insertion and a missing deletion; a version upgrade requires revalidation. These examples do not prove every malformed, adversarial, or unsupported update is detected. Root-type information is not fully encoded, so this is not a complete schema validator.
 

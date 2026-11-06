@@ -3,8 +3,8 @@ import { expect, test } from '@playwright/test';
 test('local document writes are ordered, scoped, and protected from a second writer', async ({ page }) => {
   await page.goto('/');
   const result = await page.evaluate(async () => {
-    const path = '/src/localDocumentStore.ts';
-    const { LocalDocumentStore } = await import(/* @vite-ignore */ path) as typeof import('../src/localDocumentStore');
+    const path = '/src/features/offline/localDocumentStore.ts';
+    const { LocalDocumentStore } = await import(/* @vite-ignore */ path) as typeof import('../src/features/offline/localDocumentStore');
     const user = '10000000-0000-4000-8000-000000000001';
     const other = '10000000-0000-4000-8000-000000000002';
     const workspace = '20000000-0000-4000-8000-000000000001';
@@ -39,8 +39,8 @@ test('local document writes are ordered, scoped, and protected from a second wri
 test('legacy local metadata defaults to plain text and unknown formats are rejected', async ({ page }) => {
   await page.goto('/');
   const result = await page.evaluate(async () => {
-    const path = '/src/offlineContext.ts';
-    const { readOfflineContext } = await import(/* @vite-ignore */ path) as typeof import('../src/offlineContext');
+    const path = '/src/features/offline/offlineContext.ts';
+    const { readOfflineContext } = await import(/* @vite-ignore */ path) as typeof import('../src/features/offline/offlineContext');
     const key = 'workspace-last-offline-document-v1';
     const workspaceId = '20000000-0000-4000-8000-000000000001';
     const context = {

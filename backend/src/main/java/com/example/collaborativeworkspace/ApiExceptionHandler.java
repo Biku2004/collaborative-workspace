@@ -10,6 +10,23 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(CheckpointException.class)
+    ResponseEntity<ApiError> checkpoint(CheckpointException ex) {
+        if (ex.code().equals("CHECKPOINT_CORRUPT") || ex.code().equals("CHECKPOINT_LOG_CORRUPT") || ex.code().equals("CHECKPOINT_VERIFICATION_FAILED"))
+            org.slf4j.LoggerFactory.getLogger(getClass()).error("Checkpoint verification failed: {}", ex.code());
+        return switch (ex.code()) {
+            case "NOT_FOUND" -> error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Resource not found");
+            case "ACCESS_DENIED" -> error(HttpStatus.FORBIDDEN, "ACCESS_DENIED", "Access denied");
+            case "EPOCH_CHANGED", "SCHEMA_UNSUPPORTED" -> error(HttpStatus.CONFLICT, ex.code(), "Document version or format is unavailable");
+            case "CHECKPOINT_BUSY" -> error(HttpStatus.SERVICE_UNAVAILABLE, "CHECKPOINT_BUSY", "Checkpoint service temporarily busy");
+            default -> error(HttpStatus.INTERNAL_SERVER_ERROR, "CHECKPOINT_INVALID", "Checkpoint verification failed");
+        };
+    }
+    @ExceptionHandler(YjsEngineException.class)
+    ResponseEntity<ApiError> checkpointEngine(YjsEngineException ex) {
+        return ex.rejected() ? error(HttpStatus.INTERNAL_SERVER_ERROR, "CHECKPOINT_INVALID", "Checkpoint verification failed")
+                : error(HttpStatus.SERVICE_UNAVAILABLE, "ENGINE_UNAVAILABLE", "Document engine temporarily unavailable");
+    }
     @ExceptionHandler(IdempotencyConflictException.class)
     ResponseEntity<ApiError> idempotencyConflict() {
         return ResponseEntity.status(HttpStatus.CONFLICT).cacheControl(org.springframework.http.CacheControl.noStore())

@@ -30,5 +30,11 @@ class DocumentFormatGuardTest {
         var readFailure = assertThrows(DocumentUpdateException.class, () -> delivery.sync(workspace, document, actor, 0, 0));
         assertEquals("SCHEMA_UNSUPPORTED", readFailure.code());
         verify(updates, never()).findAfter(any(), anyLong(), anyLong(), anyLong(), anyInt());
+
+        var storedCheckpoints = mock(DocumentCheckpointRepository.class);
+        var checkpoints = new DocumentCheckpointService(updates, storedCheckpoints, workspaces, engine, formats, transaction);
+        assertEquals("SCHEMA_UNSUPPORTED", assertThrows(CheckpointException.class, () -> checkpoints.create(workspace, document, actor)).code());
+        assertEquals("SCHEMA_UNSUPPORTED", assertThrows(CheckpointException.class, () -> checkpoints.latest(workspace, document, actor)).code());
+        verifyNoInteractions(storedCheckpoints, engine);
     }
 }

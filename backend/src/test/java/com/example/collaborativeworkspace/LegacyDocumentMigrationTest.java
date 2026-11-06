@@ -120,7 +120,7 @@ class LegacyDocumentMigrationTest {
         }
     }
     @Test
-    void v14PreservesStoredCheckpointAndOnlyExpandsTheCheckpointConstraint() throws Exception {
+    void v14AndV15PreserveStoredDataAndKeepUpdateBounds() throws Exception {
         String url = TestDatabaseGuard.verifiedUrl(), user = required("WORKSPACE_TEST_DB_USER"), password = required("WORKSPACE_TEST_DB_PASSWORD");
         String schema = "capacity_" + UUID.randomUUID().toString().replace("-", "");
         var migrations = Flyway.configure().dataSource(url, user, password).schemas(schema).defaultSchema(schema);
@@ -148,6 +148,13 @@ class LegacyDocumentMigrationTest {
                 assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
                         () -> jdbc.update(insertUpdate, document, UUID.randomUUID(), actor, new byte[8193], new byte[32]));
                 assertEquals(1, jdbc.update(insertUpdate, document, UUID.randomUUID(), actor, new byte[8192], new byte[32]));
+                UUID event = UUID.randomUUID();
+                jdbc.update("INSERT INTO document_update_outbox(event_id,document_id,epoch,sequence) VALUES (?,?,0,1)", event, document);
+                migrations.target("15").load().migrate();
+                assertEquals(65536, jdbc.queryForObject("SELECT octet_length(checkpoint) FROM document_streams WHERE document_id=?", Integer.class, document));
+                assertEquals(8192, jdbc.queryForObject("SELECT octet_length(payload) FROM document_updates WHERE document_id=? AND sequence=1", Integer.class, document));
+                assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_update_outbox WHERE event_id=?", Integer.class, event));
+                assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints", Integer.class));
             }
         } finally {
             try (var connection = DriverManager.getConnection(url, user, password); var statement = connection.createStatement()) {

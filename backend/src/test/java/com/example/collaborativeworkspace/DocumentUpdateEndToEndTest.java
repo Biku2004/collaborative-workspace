@@ -46,9 +46,223 @@ class DocumentUpdateEndToEndTest {
     @Autowired DocumentService documents;
     @Autowired PasswordEncoder encoder;
     @Autowired JdbcTemplate jdbc;
-    @Autowired YjsEngineClient engineClient;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean YjsEngineClient engineClient;
+    @Autowired DocumentUpdateService updateService;
+    @Autowired DocumentCheckpointService checkpointService;
     @Autowired tools.jackson.databind.json.JsonMapper json;
     static Process engine;
+
+    @Test void checkpointRetainsConcurrentTailAndRejectsCorruption() throws Exception {
+        UUID ownerId = UUID.randomUUID(), workspace = null;
+        String owner = "checkpoint-" + ownerId + "@example.com";
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "checkpoint-test"));
+        try {
+            users.create(ownerId, owner, encoder.encode("test-user-password"));
+            workspace = workspaces.create(owner, "checkpoint test").id();
+            UUID document = documents.create(workspace, owner, "checkpoint").id();
+            var fixture = new Properties();
+            try (var reader = java.nio.file.Files.newBufferedReader(Path.of("..", "experiments", "yjs-private-engine", "fixtures", "dependency-order.properties"))) { fixture.load(reader); }
+            byte[] first = Base64.getDecoder().decode(fixture.getProperty("first"));
+            byte[] next = Base64.getDecoder().decode(fixture.getProperty("dependent"));
+            updateService.submit(workspace, document, ownerId, 0, UUID.randomUUID(), first, () -> true);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                if (Thread.currentThread().getName().equals("checkpoint-test")) {
+                    entered.countDown();
+                    if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Checkpoint test timed out");
+                }
+                return invocation.callRealMethod();
+            }).when(engineClient).reconstruct(org.mockito.ArgumentMatchers.anyList());
+            UUID selectedWorkspace = workspace;
+            var future = executor.submit(() -> checkpointService.create(selectedWorkspace, document, ownerId));
+            assertTrue(entered.await(10, TimeUnit.SECONDS));
+            updateService.submit(workspace, document, ownerId, 0, UUID.randomUUID(), next, () -> true);
+            release.countDown();
+            var published = future.get(20, TimeUnit.SECONDS);
+            assertEquals(1, published.checkpoint().sequence());
+            assertEquals(1, published.observedHead());
+            assertEquals(2L, jdbc.queryForObject("SELECT head_sequence FROM document_streams WHERE document_id=?", Long.class, document));
+            assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM document_updates WHERE document_id=?", Integer.class, document));
+            assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM document_update_outbox WHERE document_id=?", Integer.class, document));
+            assertEquals(engineClient.reconstruct(java.util.List.of(first, next)).text(), engineClient.reconstruct(java.util.List.of(published.checkpoint().bytes(), next)).text());
+            var advanced = checkpointService.create(workspace, document, ownerId);
+            assertEquals(2, advanced.checkpoint().sequence());
+            assertEquals(2, checkpointService.latest(workspace, document, ownerId).sequence());
+            byte[] corrupted = advanced.checkpoint().bytes(); corrupted[corrupted.length - 1] ^= 1;
+            jdbc.update("UPDATE document_checkpoints SET checkpoint=? WHERE document_id=? AND epoch=0 AND through_sequence=2", corrupted, document);
+            assertEquals("CHECKPOINT_CORRUPT", assertThrows(CheckpointException.class, () -> checkpointService.latest(selectedWorkspace, document, ownerId)).code());
+            assertEquals("CHECKPOINT_CORRUPT", assertThrows(CheckpointException.class, () -> checkpointService.create(selectedWorkspace, document, ownerId)).code());
+        } finally {
+            release.countDown(); executor.shutdownNow(); executor.awaitTermination(5, TimeUnit.SECONDS);
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id=?", ownerId);
+        }
+    }
+
+    @Test void checkpointJobsAdvanceInBoundedBatchesAndRejectDamagedLog() throws Exception {
+        UUID ownerId = UUID.randomUUID(), workspace = null;
+        String owner = "checkpoint-batches-" + ownerId + "@example.com";
+        try {
+            users.create(ownerId, owner, encoder.encode("test-user-password"));
+            workspace = workspaces.create(owner, "checkpoint batches").id();
+            UUID document = documents.create(workspace, owner, "long log").id();
+            var fixture = new Properties();
+            try (var reader = java.nio.file.Files.newBufferedReader(Path.of("..", "experiments", "yjs-private-engine", "fixtures", "dependency-order.properties"))) { fixture.load(reader); }
+            byte[] first = Base64.getDecoder().decode(fixture.getProperty("first"));
+            for (int i = 0; i < 18; i++) updateService.submit(workspace, document, ownerId, 0, UUID.randomUUID(), first, () -> true);
+            var firstBatch = checkpointService.create(workspace, document, ownerId);
+            assertEquals(16, firstBatch.checkpoint().sequence()); assertEquals(18, firstBatch.observedHead());
+            var secondBatch = checkpointService.create(workspace, document, ownerId);
+            assertEquals(18, secondBatch.checkpoint().sequence());
+            assertEquals(18, jdbc.queryForObject("SELECT count(*) FROM document_updates WHERE document_id=?", Integer.class, document));
+            assertArrayEquals(jdbc.queryForObject("SELECT checkpoint FROM document_streams WHERE document_id=?", byte[].class, document), secondBatch.checkpoint().bytes());
+            UUID broken = documents.create(workspace, owner, "damaged log").id();
+            updateService.submit(workspace, broken, ownerId, 0, UUID.randomUUID(), first, () -> true);
+            byte[] changed = first.clone(); changed[changed.length - 1] ^= 1;
+            jdbc.update("UPDATE document_updates SET payload=? WHERE document_id=? AND sequence=1", changed, broken);
+            UUID selectedWorkspace = workspace;
+            assertEquals("CHECKPOINT_LOG_CORRUPT", assertThrows(CheckpointException.class, () -> checkpointService.create(selectedWorkspace, broken, ownerId)).code());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, broken));
+            UUID gap = documents.create(workspace, owner, "missing update").id();
+            updateService.submit(workspace, gap, ownerId, 0, UUID.randomUUID(), first, () -> true);
+            updateService.submit(workspace, gap, ownerId, 0, UUID.randomUUID(), first, () -> true);
+            jdbc.update("DELETE FROM document_updates WHERE document_id=? AND epoch=0 AND sequence=1", gap);
+            assertEquals("CHECKPOINT_LOG_CORRUPT", assertThrows(CheckpointException.class, () -> checkpointService.create(selectedWorkspace, gap, ownerId)).code());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, gap));
+        } finally {
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id=?", ownerId);
+        }
+    }
+
+    @Test void checkpointRechecksRoleAfterReconstruction() throws Exception {
+        UUID ownerId = UUID.randomUUID(), editorId = UUID.randomUUID(), workspace = null;
+        String owner = "checkpoint-role-owner-" + ownerId + "@example.com", editor = "checkpoint-role-editor-" + editorId + "@example.com";
+        var entered = new java.util.concurrent.CountDownLatch(1); var release = new java.util.concurrent.CountDownLatch(1);
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "checkpoint-role-test"));
+        try {
+            users.create(ownerId, owner, encoder.encode("test-user-password")); users.create(editorId, editor, encoder.encode("test-user-password"));
+            workspace = workspaces.create(owner, "checkpoint role").id();
+            membership.setRole(workspace, owner, new ChangeWorkspaceMemberRequest(editor, WorkspaceRole.EDITOR));
+            UUID document = documents.create(workspace, owner, "role race").id();
+            org.mockito.Mockito.doAnswer(invocation -> {
+                if (Thread.currentThread().getName().equals("checkpoint-role-test")) {
+                    entered.countDown();
+                    if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Checkpoint role test timed out");
+                }
+                return invocation.callRealMethod();
+            }).when(engineClient).reconstruct(org.mockito.ArgumentMatchers.anyList());
+            UUID selectedWorkspace = workspace;
+            var future = executor.submit(() -> checkpointService.create(selectedWorkspace, document, editorId));
+            assertTrue(entered.await(10, TimeUnit.SECONDS));
+            membership.setRole(workspace, owner, new ChangeWorkspaceMemberRequest(editor, WorkspaceRole.VIEWER));
+            release.countDown();
+            var failed = assertThrows(java.util.concurrent.ExecutionException.class, () -> future.get(20, TimeUnit.SECONDS));
+            assertInstanceOf(CheckpointException.class, failed.getCause());
+            assertEquals("ACCESS_DENIED", ((CheckpointException) failed.getCause()).code());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, document));
+        } finally {
+            release.countDown(); executor.shutdownNow(); executor.awaitTermination(5, TimeUnit.SECONDS);
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id IN (?, ?)", ownerId, editorId);
+        }
+    }
+
+    @Test void concurrentCheckpointJobsDoNotOverwriteTheSameBoundary() throws Exception {
+        UUID ownerId = UUID.randomUUID(), workspace = null;
+        String owner = "checkpoint-concurrent-" + ownerId + "@example.com";
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "checkpoint-busy-test"));
+        var entered = new java.util.concurrent.CountDownLatch(1); var release = new java.util.concurrent.CountDownLatch(1);
+        try {
+            users.create(ownerId, owner, encoder.encode("test-user-password"));
+            workspace = workspaces.create(owner, "checkpoint concurrent").id();
+            UUID document = documents.create(workspace, owner, "empty").id(), selectedWorkspace = workspace;
+            org.mockito.Mockito.doAnswer(invocation -> {
+                if (Thread.currentThread().getName().equals("checkpoint-busy-test")) {
+                    entered.countDown();
+                    if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Checkpoint busy test timed out");
+                }
+                return invocation.callRealMethod();
+            }).when(engineClient).reconstruct(org.mockito.ArgumentMatchers.anyList());
+            var a = executor.submit(() -> checkpointService.create(selectedWorkspace, document, ownerId));
+            assertTrue(entered.await(10, TimeUnit.SECONDS));
+            assertEquals("CHECKPOINT_BUSY", assertThrows(CheckpointException.class, () -> checkpointService.create(selectedWorkspace, document, ownerId)).code());
+            release.countDown();
+            var first = a.get(20, TimeUnit.SECONDS);
+            var second = checkpointService.create(selectedWorkspace, document, ownerId);
+            assertEquals(0, first.checkpoint().sequence());
+            assertArrayEquals(first.checkpoint().bytes(), second.checkpoint().bytes());
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, document));
+        } finally {
+            release.countDown(); executor.shutdownNow(); executor.awaitTermination(5, TimeUnit.SECONDS);
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id=?", ownerId);
+        }
+    }
+
+    @Test void checkpointDoesNotPublishAfterEpochChanges() throws Exception {
+        UUID ownerId = UUID.randomUUID(), workspace = null;
+        String owner = "checkpoint-epoch-" + ownerId + "@example.com";
+        var entered = new java.util.concurrent.CountDownLatch(1); var release = new java.util.concurrent.CountDownLatch(1);
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "checkpoint-epoch-test"));
+        try {
+            users.create(ownerId, owner, encoder.encode("test-user-password"));
+            workspace = workspaces.create(owner, "checkpoint epoch").id();
+            UUID document = documents.create(workspace, owner, "epoch race").id();
+            org.mockito.Mockito.doAnswer(invocation -> {
+                if (Thread.currentThread().getName().equals("checkpoint-epoch-test")) {
+                    entered.countDown();
+                    if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Checkpoint epoch test timed out");
+                }
+                return invocation.callRealMethod();
+            }).when(engineClient).reconstruct(org.mockito.ArgumentMatchers.anyList());
+            UUID selectedWorkspace = workspace;
+            var future = executor.submit(() -> checkpointService.create(selectedWorkspace, document, ownerId));
+            assertTrue(entered.await(10, TimeUnit.SECONDS));
+            jdbc.update("INSERT INTO document_streams(document_id,epoch,head_sequence,checkpoint) VALUES (?,1,0,?)", document, new byte[] {0, 0});
+            release.countDown();
+            var failed = assertThrows(java.util.concurrent.ExecutionException.class, () -> future.get(20, TimeUnit.SECONDS));
+            assertInstanceOf(CheckpointException.class, failed.getCause());
+            assertEquals("EPOCH_CHANGED", ((CheckpointException) failed.getCause()).code());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, document));
+        } finally {
+            release.countDown(); executor.shutdownNow(); executor.awaitTermination(5, TimeUnit.SECONDS);
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id=?", ownerId);
+        }
+    }
+
+    @Test void checkpointRechecksSessionBeforePublishing() throws Exception {
+        UUID ownerId = UUID.randomUUID(), workspace = null;
+        String owner = "checkpoint-session-" + ownerId + "@example.com";
+        var entered = new java.util.concurrent.CountDownLatch(1); var release = new java.util.concurrent.CountDownLatch(1);
+        var valid = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "checkpoint-session-test"));
+        try {
+            users.create(ownerId, owner, encoder.encode("test-user-password"));
+            workspace = workspaces.create(owner, "checkpoint session").id();
+            UUID document = documents.create(workspace, owner, "session race").id();
+            org.mockito.Mockito.doAnswer(invocation -> {
+                if (Thread.currentThread().getName().equals("checkpoint-session-test")) {
+                    entered.countDown();
+                    if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Checkpoint session test timed out");
+                }
+                return invocation.callRealMethod();
+            }).when(engineClient).reconstruct(org.mockito.ArgumentMatchers.anyList());
+            UUID selectedWorkspace = workspace;
+            var future = executor.submit(() -> checkpointService.create(selectedWorkspace, document, ownerId, valid::get));
+            assertTrue(entered.await(10, TimeUnit.SECONDS)); valid.set(false); release.countDown();
+            var failed = assertThrows(java.util.concurrent.ExecutionException.class, () -> future.get(20, TimeUnit.SECONDS));
+            assertInstanceOf(CheckpointException.class, failed.getCause());
+            assertEquals("ACCESS_DENIED", ((CheckpointException) failed.getCause()).code());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, document));
+        } finally {
+            release.countDown(); executor.shutdownNow(); executor.awaitTermination(5, TimeUnit.SECONDS);
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id=?", ownerId);
+        }
+    }
 
     @DynamicPropertySource static void settings(DynamicPropertyRegistry registry) throws Exception {
         String database = TestDatabaseGuard.verifiedUrl();
@@ -113,6 +327,9 @@ class DocumentUpdateEndToEndTest {
             assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM document_updates WHERE document_id=?", Integer.class, document));
             byte[] checkpoint = jdbc.queryForObject("SELECT checkpoint FROM document_streams WHERE document_id=?", byte[].class, document);
             assertTrue(engineClient.reconstructRich(java.util.List.of(checkpoint)).initialized());
+            var materialized = checkpointService.create(workspace, document, ownerId);
+            assertEquals(2, materialized.checkpoint().sequence());
+            assertTrue(engineClient.reconstructRich(java.util.List.of(materialized.checkpoint().bytes())).initialized());
             socket.sendText(request, true).join();
             assertTrue(listener.next("SAVED").contains("\"duplicate\":true"));
             var viewerClient = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
@@ -134,6 +351,45 @@ class DocumentUpdateEndToEndTest {
     }
     @AfterAll static void stopEngine() throws Exception {
         if (engine != null) { engine.destroy(); if (!engine.waitFor(5, TimeUnit.SECONDS)) engine.destroyForcibly(); }
+    }
+
+    @Test void checkpointHttpUsesCurrentRolesAndNoStore() throws Exception {
+        UUID ownerId = UUID.randomUUID(), viewerId = UUID.randomUUID(), outsiderId = UUID.randomUUID(), workspace = null;
+        String owner = "checkpoint-http-owner-" + ownerId + "@example.com", viewer = "checkpoint-http-view-" + viewerId + "@example.com";
+        String outsider = "checkpoint-http-out-" + outsiderId + "@example.com", base = "http://127.0.0.1:" + port;
+        try {
+            users.create(ownerId, owner, encoder.encode("test-user-password")); users.create(viewerId, viewer, encoder.encode("test-user-password"));
+            users.create(outsiderId, outsider, encoder.encode("test-user-password"));
+            workspace = workspaces.create(owner, "checkpoint http").id();
+            membership.setRole(workspace, owner, new ChangeWorkspaceMemberRequest(viewer, WorkspaceRole.VIEWER));
+            UUID document = documents.create(workspace, owner, "empty").id();
+            String path = base + "/api/workspaces/" + workspace + "/documents/" + document + "/checkpoints";
+            var ownerClient = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
+            var viewerClient = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
+            var outsiderClient = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build();
+            login(ownerClient, base, owner); login(viewerClient, base, viewer); login(outsiderClient, base, outsider);
+            assertEquals(404, get(ownerClient, path + "/latest").statusCode());
+            assertEquals(404, get(outsiderClient, path + "/latest").statusCode());
+            var withoutCsrf = HttpRequest.newBuilder(URI.create(path)).POST(HttpRequest.BodyPublishers.noBody()).build();
+            assertEquals(403, ownerClient.send(withoutCsrf, HttpResponse.BodyHandlers.discarding()).statusCode());
+            String ownerToken = json.readTree(get(ownerClient, base + "/api/csrf").body()).path("token").asText();
+            String viewerToken = json.readTree(get(viewerClient, base + "/api/csrf").body()).path("token").asText();
+            var denied = HttpRequest.newBuilder(URI.create(path)).header("X-CSRF-TOKEN", viewerToken).POST(HttpRequest.BodyPublishers.noBody()).build();
+            assertEquals(403, viewerClient.send(denied, HttpResponse.BodyHandlers.discarding()).statusCode());
+            var create = HttpRequest.newBuilder(URI.create(path)).header("X-CSRF-TOKEN", ownerToken).POST(HttpRequest.BodyPublishers.noBody()).build();
+            var created = ownerClient.send(create, HttpResponse.BodyHandlers.ofString());
+            assertEquals(201, created.statusCode()); assertEquals(0, json.readTree(created.body()).path("throughSequence").longValue());
+            var retry = ownerClient.send(create, HttpResponse.BodyHandlers.ofString());
+            assertEquals(201, retry.statusCode()); assertEquals(json.readTree(created.body()).path("sha256"), json.readTree(retry.body()).path("sha256"));
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, document));
+            var read = get(viewerClient, path + "/latest");
+            assertEquals(200, read.statusCode()); assertTrue(read.headers().firstValue("Cache-Control").orElse("").contains("no-store"));
+            assertEquals("PLAIN_TEXT_V1", json.readTree(read.body()).path("format").asText());
+            assertEquals(404, get(outsiderClient, path + "/latest").statusCode());
+        } finally {
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id IN (?, ?, ?)", ownerId, viewerId, outsiderId);
+        }
     }
 
     @Test void actualEngineAndDatabaseProduceSavedOnlyAfterCommit() throws Exception {
@@ -182,6 +438,9 @@ class DocumentUpdateEndToEndTest {
             assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM document_update_outbox WHERE document_id=?", Integer.class, document));
             byte[] checkpoint = jdbc.queryForObject("SELECT checkpoint FROM document_streams WHERE document_id=?", byte[].class, document);
             assertEquals("ac!", engineClient.reconstruct(java.util.List.of(checkpoint)).text());
+            var deletionCheckpoint = checkpointService.create(workspace, document, user);
+            assertEquals(3, deletionCheckpoint.checkpoint().sequence());
+            assertEquals("ac!", engineClient.reconstruct(java.util.List.of(deletionCheckpoint.checkpoint().bytes())).text());
             var received = new java.util.TreeMap<Long, byte[]>();
             for (int i = 0; i < 3; i++) {
                 var event = json.readTree(readerListener.next("UPDATE"));

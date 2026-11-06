@@ -1,4 +1,4 @@
-# API endpoint reference through Lesson 26
+# API endpoint reference through Lesson 29
 
 This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 
@@ -19,6 +19,8 @@ This table describes the currently implemented routes, not the planned collabora
 | POST | `/api/workspaces/{workspaceId}/documents` | Create a document inside a workspace | Workspace owner or editor, with session and CSRF token | JSON `{ "title": "Meeting notes" }`. Returns 201 and a document body including `workspaceId`. Viewer gets 403; nonmember gets 404. |
 | PATCH | `/api/workspaces/{workspaceId}/documents/{documentId}` | Rename an active document | Owner or editor, with CSRF | JSON `{ "title": "New title", "version": 0 }`; returns 200 with incremented version, 409 for a stale version or archived document. |
 | POST | `/api/workspaces/{workspaceId}/documents/{documentId}/archive` | Archive an active document | Owner or editor, with CSRF | JSON `{ "version": 0 }`; returns 200 with `archived: true` and incremented version, or 409 for a stale version or already archived document. |
+| POST | `/api/workspaces/{workspaceId}/documents/{documentId}/checkpoints` | Publish a verified committed prefix | Owner or editor, with CSRF | Returns 201 with `epoch`, `throughSequence`, `observedHead`, `format` and Base64 `sha256`. A job advances at most 16 updates; repeat while behind. A concurrent checkpoint job gets 503. |
+| GET | `/api/workspaces/{workspaceId}/documents/{documentId}/checkpoints/latest` | Read the latest verified checkpoint | Current member of the active document's workspace | Returns 200 with Base64 `checkpoint`, `sha256`, `epoch`, `throughSequence` and `format`, or 404 when unavailable. Corruption fails verification. Response uses `no-store`. |
 | POST | `/api/documents` | Former unscoped creation route | Removed | Returns 404 for an authenticated request with valid CSRF. |
 | GET | `/api/documents/{id}` | Read one document | Any current workspace member | Returns 200 with document metadata, including archived documents; missing, unassigned, and inaccessible documents return 404. |
 | GET | `/api/workspaces/{workspaceId}/documents` | List documents in a workspace | Any current workspace member | Returns 200 with active `items` and `nextCursor`; accepts `limit` (1–100, default 20) and optional `cursor`. Inaccessible workspace gives 404, invalid page parameters give 400. |

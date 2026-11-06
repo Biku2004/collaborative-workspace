@@ -1,7 +1,7 @@
 import { Extension } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, ySyncPluginKey } from '@tiptap/y-tiptap';
+import { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, ySyncPluginKey } from '@tiptap/y-tiptap';
 import type { DocumentProvider } from './provider';
 
 /** Cursor data never enters the Yjs document or its durable update queue. */
@@ -45,16 +45,41 @@ export function richPresence(provider: Pick<DocumentProvider, 'getPresence' | 'o
               published = true;
             } catch { /* The editor may still be mapping an incoming transaction. */ }
           };
-          let subscribed = false;
+          let subscribed = false, pending = false;
+          let frame: number | undefined;
+          const schedule = () => {
+            if (!pending || frame !== undefined || view.isDestroyed) return;
+            frame = requestAnimationFrame(() => {
+              frame = undefined;
+              if (!pending || view.isDestroyed || view.composing) return;
+              // A queued task can still beat selectionchange. Decorations must not write
+              // an old model selection back into the DOM while native movement is pending.
+              if (view.hasFocus()) {
+                const selection = view.dom.ownerDocument.getSelection();
+                if (!selection?.anchorNode || !selection.focusNode || !view.dom.contains(selection.anchorNode) || !view.dom.contains(selection.focusNode)) return;
+                try {
+                  if (view.posAtDOM(selection.anchorNode, selection.anchorOffset) !== view.state.selection.anchor ||
+                      view.posAtDOM(selection.focusNode, selection.focusOffset) !== view.state.selection.head) return;
+                } catch { return; }
+              }
+              pending = false;
+              view.dispatch(view.state.tr.setMeta('workspacePresence', true));
+            });
+          };
           const unsubscribe = provider.observePresence(() => {
-            // Let native selectionchange and any active editor transaction finish first.
-            // Immediate dispatch can restore a stale selection before the browser reports its movement.
-            if (subscribed && !view.isDestroyed) setMeta(view, 'workspacePresence', true);
+            if (subscribed && !view.isDestroyed) { pending = true; schedule(); }
           });
           subscribed = true;
           queueMicrotask(() => { if (!view.isDestroyed) publish(); });
-          view.dom.addEventListener('focus', publish);
-          return { update: publish, destroy() { unsubscribe(); view.dom.removeEventListener('focus', publish); } };
+          const focus = () => { publish(); schedule(); };
+          view.dom.addEventListener('focus', focus);
+          view.dom.addEventListener('compositionend', schedule);
+          view.dom.ownerDocument.addEventListener('selectionchange', schedule);
+          return { update() { publish(); schedule(); }, destroy() {
+            unsubscribe(); if (frame !== undefined) cancelAnimationFrame(frame);
+            view.dom.removeEventListener('focus', focus); view.dom.removeEventListener('compositionend', schedule);
+            view.dom.ownerDocument.removeEventListener('selectionchange', schedule);
+          } };
         },
       })];
     },

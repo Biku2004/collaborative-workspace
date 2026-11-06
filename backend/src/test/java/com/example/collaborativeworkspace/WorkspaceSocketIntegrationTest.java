@@ -49,9 +49,49 @@ class WorkspaceSocketIntegrationTest {
     @Autowired WorkspaceMembershipService membership;
     @Autowired DocumentRoomHub rooms;
     @Autowired DocumentUpdateService updateService;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
     @MockitoSpyBean DocumentUpdateRepository updateRepository;
     @MockitoSpyBean YjsEngineClient engine;
     private static final String ORIGIN = "http://127.0.0.1:5173";
+
+    @Test void committedPrivilegeReductionClosesIdleAndJoinedPeersWithoutRevokingOtherWorkspaces() throws Exception {
+        UUID ownerId = UUID.randomUUID(), memberId = UUID.randomUUID(), workspace = null, otherWorkspace = null;
+        String owner = "active-owner-" + ownerId + "@example.com", member = "active-member-" + memberId + "@example.com";
+        String base = "http://127.0.0.1:" + port; var sockets = new java.util.ArrayList<WebSocket>();
+        try {
+            users.create(ownerId, owner, encoder.encode("test-user-password")); users.create(memberId, member, encoder.encode("test-user-password"));
+            workspace = workspaces.create(owner, "Active revocation").id(); otherWorkspace = workspaces.create(owner, "Other access").id();
+            membership.setRole(workspace, owner, new ChangeWorkspaceMemberRequest(member, WorkspaceRole.EDITOR));
+            membership.setRole(otherWorkspace, owner, new ChangeWorkspaceMemberRequest(member, WorkspaceRole.EDITOR));
+            UUID document = documents.create(workspace, owner, "Shared").id(), otherDocument = documents.create(otherWorkspace, owner, "Other").id();
+            var client = client(); login(client, base, member);
+            var joined = new QueueListener(); var idle = new QueueListener(); var other = new QueueListener();
+            URI uri = URI.create("ws://127.0.0.1:" + port + "/api/workspaces/" + workspace + "/socket");
+            var first = connectQueue(client, uri, joined); var second = connectQueue(client, uri, idle);
+            var third = connectQueue(client, URI.create("ws://127.0.0.1:" + port + "/api/workspaces/" + otherWorkspace + "/socket"), other);
+            sockets.addAll(java.util.List.of(first, second, third)); join(first, joined, document); join(third, other, otherDocument);
+            UUID selected = workspace;
+            new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(status -> {
+                membership.remove(selected, owner, memberId);
+                assertFalse(joined.closed.isDone()); assertFalse(idle.closed.isDone()); status.setRollbackOnly();
+            });
+            first.sendText("{\"type\":\"TEST_MESSAGE\",\"version\":1,\"message\":\"after rollback\"}", true).join();
+            assertNotNull(joined.messages.poll(5, TimeUnit.SECONDS));
+            membership.setRole(workspace, owner, new ChangeWorkspaceMemberRequest(member, WorkspaceRole.VIEWER));
+            assertEquals(1008, joined.closed.get(5, TimeUnit.SECONDS)); assertEquals(1008, idle.closed.get(5, TimeUnit.SECONDS));
+            third.sendText("{\"type\":\"TEST_MESSAGE\",\"version\":1,\"message\":\"other workspace remains\"}", true).join();
+            assertNotNull(other.messages.poll(5, TimeUnit.SECONDS)); assertFalse(other.closed.isDone());
+            var viewer = new QueueListener(); var readSocket = connectQueue(client, uri, viewer); sockets.add(readSocket); join(readSocket, viewer, document);
+            readSocket.sendText("{\"type\":\"SUBMIT_UPDATE\",\"version\":1,\"epoch\":0,\"updateId\":\"" + UUID.randomUUID() + "\",\"payload\":\"AAA=\"}", true).join();
+            assertTrue(viewer.messages.poll(5, TimeUnit.SECONDS).contains("ACCESS_DENIED"));
+            membership.remove(workspace, owner, memberId); assertEquals(1008, viewer.closed.get(5, TimeUnit.SECONDS));
+        } finally {
+            for (var socket : sockets) socket.abort();
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            if (otherWorkspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", otherWorkspace); jdbc.update("DELETE FROM workspaces WHERE id=?", otherWorkspace); }
+            jdbc.update("DELETE FROM app_users WHERE id IN (?, ?)", ownerId, memberId);
+        }
+    }
 
     @DynamicPropertySource static void settings(DynamicPropertyRegistry registry) {
         String url = TestDatabaseGuard.verifiedUrl();

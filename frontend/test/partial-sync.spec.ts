@@ -47,6 +47,53 @@ test('a first synchronization interrupted mid-replay is not an offline editing b
   await expect.poll(() => page.evaluate(() => (window as unknown as Window & { phase: string }).phase)).toBe('waiting');
 });
 
+test('a complete cached draft stays editable during repair while uploads wait', async ({ page }) => {
+  const user = '10000000-0000-4000-8000-000000000071', workspace = '20000000-0000-4000-8000-000000000071';
+  const document = '30000000-0000-4000-8000-000000000071', initial = 'AQEBAAQBB2NvbnRlbnQKSGVsbG8gSmF2YQA=';
+  await page.route('**/api/me', route => route.fulfill({ status: 200, json: { username: 'test@example.com', id: user } }));
+  await page.goto('/');
+  await page.evaluate(async ({ user, workspace, document, initial }) => {
+    const storagePath = '/src/localDocumentStore.ts', providerPath = '/src/provider.ts';
+    const { LocalDocumentStore } = await import(/* @vite-ignore */ storagePath) as typeof import('../src/localDocumentStore');
+    const { DocumentProvider } = await import(/* @vite-ignore */ providerPath) as typeof import('../src/provider');
+    const store = await LocalDocumentStore.open(user, workspace, document, 0);
+    await store.save({ version: 1, state: Uint8Array.from(atob(initial), c => c.charCodeAt(0)), pending: [] }); await store.close();
+    const hooks = window as unknown as { repairState: import('../src/provider').EditorState; sentDuringRepair: number; edit: (text?: string) => void; finishRepair: () => void; stopRepair: () => void };
+    hooks.sentDuringRepair = 0;
+    class FakeSocket {
+      static readonly OPEN = 1; static readonly CONNECTING = 0; readyState = 1; bufferedAmount = 0;
+      onopen?: () => void; onmessage?: (event: { data: string }) => void; onclose?: (event: { code: number }) => void; onerror?: () => void;
+      constructor() { setTimeout(() => this.onopen?.(), 0); }
+      send(raw: string) {
+        const value = JSON.parse(raw) as { type: string; updateId?: string };
+        const reply = value.type === 'HELLO' ? { type: 'WELCOME', version: 1, workspaceId: workspace, userId: user } :
+          value.type === 'JOIN' ? { type: 'JOINED', version: 1, documentId: document, format: 'PLAIN_TEXT_V1' } : null;
+        if (reply) setTimeout(() => this.onmessage?.({ data: JSON.stringify(reply) }), 0);
+        if (value.type === 'SYNC') hooks.finishRepair = () => this.onmessage?.({ data: JSON.stringify({ type: 'SYNC_PAGE', version: 1,
+          documentId: document, epoch: 0, after: 1, head: 1, hasMore: false, updates: [{ sequence: 1, payload: initial }] }) });
+        if (value.type === 'SUBMIT_UPDATE') {
+          hooks.sentDuringRepair++;
+          setTimeout(() => this.onmessage?.({ data: JSON.stringify({ type: 'REJECTED', version: 1, code: 'ACCESS_DENIED' }) }), 0);
+        }
+      }
+      close() { this.readyState = 3; }
+    }
+    window.WebSocket = FakeSocket as unknown as typeof WebSocket;
+    const provider = new DocumentProvider(user, workspace, document, state => { hooks.repairState = state; });
+    hooks.edit = (text = 'Hello Java!') => provider.setText(text); hooks.stopRepair = () => provider.destroy();
+  }, { user, workspace, document, initial });
+  await expect.poll(() => page.evaluate(() => (window as unknown as { repairState: { phase: string } }).repairState?.phase)).toBe('syncing');
+  await page.evaluate(() => (window as unknown as { edit: () => void }).edit());
+  await expect.poll(() => page.evaluate(() => (window as unknown as { repairState: { text: string } }).repairState.text)).toBe('Hello Java!');
+  expect(await page.evaluate(() => (window as unknown as { sentDuringRepair: number }).sentDuringRepair)).toBe(0);
+  await page.evaluate(() => (window as unknown as { finishRepair: () => void }).finishRepair());
+  await expect.poll(() => page.evaluate(() => (window as unknown as { sentDuringRepair: number }).sentDuringRepair)).toBe(1);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { repairState: { phase: string } }).repairState.phase)).toBe('failed');
+  await page.evaluate(() => (window as unknown as { edit: (text: string) => void }).edit('must not replace a denied draft'));
+  expect(await page.evaluate(() => (window as unknown as { repairState: { text: string; editable: boolean } }).repairState)).toMatchObject({ text: 'Hello Java!', editable: false });
+  await page.evaluate(() => (window as unknown as { stopRepair: () => void }).stopRepair());
+});
+
 test('an epoch change rejects reconciliation before pending updates are sent', async ({ page }) => {
   const user = '10000000-0000-4000-8000-000000000011';
   const workspace = '20000000-0000-4000-8000-000000000011';

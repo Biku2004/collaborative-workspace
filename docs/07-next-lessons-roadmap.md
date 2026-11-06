@@ -1,6 +1,6 @@
 # 7. Roadmap after Lesson 7
 
-This is a **plan** for the remaining features. Lessons 8–31 are complete as local learning milestones; Lessons 32–37 remain incomplete. Lesson 27's rich-text feature remains gated and has unresolved security and operational limitations. Lesson numbers below continue the [learning checklist](00-learning-checklist.md); the broader architecture guide uses different **step** numbers. One lesson delivers one primary capability, although a difficult lesson may take more than one session. We implement, explain and verify each lesson before moving to the next.
+This is a **plan** for the remaining features. Lessons 8–32 are complete as local learning milestones; Lessons 33–37 remain incomplete. Lesson 27's rich-text feature remains gated and has unresolved security and operational limitations. Lesson numbers below continue the [learning checklist](00-learning-checklist.md); the broader architecture guide uses different **step** numbers. One lesson delivers one primary capability, although a difficult lesson may take more than one session. We implement, explain and verify each lesson before moving to the next.
 
 ## Where we are now
 
@@ -242,4 +242,4 @@ Comments, mentions, exports, object storage, Kafka and explicit room ownership a
 
 ## Next lesson
 
-Continue with **Lesson 32: revoke access during active sessions**. Safe restore and retained-draft recovery are described in [Lesson 31](lessons/31-safe-revision-restore.md).
+Continue with **Lesson 33: search authorized committed content**. Active revocation and its read boundary are described in [Lesson 32](lessons/32-active-session-revocation.md).

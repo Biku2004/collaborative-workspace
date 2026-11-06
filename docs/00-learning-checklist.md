@@ -47,7 +47,8 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 - [x] **Lesson 29 — Verified checkpoints.** See [Lesson 29](lessons/29-verified-checkpoints.md). Fixed-boundary reconstruction, checksum checks, concurrent tails and safe publication are tested; all history is retained.
 - [x] **Lesson 30 — Named revisions.** See [Lesson 30](lessons/30-named-revisions.md). Immutable snapshots, authorized listing and read-only preview are tested; pending local edits are explicitly excluded until committed.
 - [x] **Lesson 31 — Safe revision restore with epochs.** See [Lesson 31](lessons/31-safe-revision-restore.md). Atomic expected-boundary publication, old-update rejection, preserved history and manual local-draft recovery are verified.
-- [ ] **Lesson 32 — Active-session access revocation.**
+- [x] **Lesson 32 — Active-session access revocation.** See [Lesson 32](lessons/32-active-session-revocation.md). Commit/logout ordering, after-commit workspace invalidation, bounded authorization freshness and retained-draft behavior are verified.
+- [ ] **Lesson 33 — Search authorized committed content.**
 - [ ] Add search, monitoring, multi-instance communication and failure testing as separate milestones.
 
 The [full roadmap](03-implementation-roadmap.md) gives the dependencies, acceptance tests and later scaling milestones. We will check whether each new service is already available and use Docker for missing services as needed. We will not use Docker for your regular local PostgreSQL development database.

@@ -32,3 +32,20 @@ export function insertAtNativeEnd(element: HTMLElement) {
   notify?.();
   document.execCommand('insertText', false, '!');
 }
+
+/** Model browser selectionchange arriving later than a queued presence transaction. */
+export async function insertAtDelayedNativeEnd(element: HTMLElement) {
+  const block = (event: Event) => event.stopImmediatePropagation();
+  document.addEventListener('selectionchange', block, true);
+  try {
+    const editor = element.querySelector('[contenteditable="true"]')!;
+    const range = document.createRange(); range.selectNodeContents(editor); range.collapse(false);
+    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+    notify?.();
+    await new Promise(resolve => setTimeout(resolve, 40));
+    document.execCommand('insertText', false, '!');
+  } finally {
+    document.removeEventListener('selectionchange', block, true);
+    document.dispatchEvent(new Event('selectionchange'));
+  }
+}

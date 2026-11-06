@@ -8,7 +8,7 @@ const RevisionsPanel = lazy(() => import('./RevisionsPanel'));
 const LocalDraftPreview = lazy(() => import('./LocalDraftPreview'));
 
 type Props = { userId: string; workspaceId: string; documentId: string; title: string; format: CollaborationFormat; readOnly: boolean; onDirty: (dirty: boolean) => void; onBack: () => void };
-const initial: EditorState = { phase: 'connecting', text: '', pending: 0, message: 'Connecting…', hasLocalState: false };
+const initial: EditorState = { phase: 'connecting', text: '', pending: 0, message: 'Connecting…', hasLocalState: false, editable: false };
 
 export default function Editor({ userId, workspaceId, documentId, title, format, readOnly, onDirty, onBack }: Props) {
   const [state, setState] = useState<EditorState>(initial);
@@ -82,9 +82,9 @@ export default function Editor({ userId, workspaceId, documentId, title, format,
       return <li key={peer.presenceId}>{peer.email} ({peer.userId}){location}</li>;
     })}</ul></div>}
     {format === 'RICH_TEXT_V1' ? (canRenderRich && provider.current && <RichEditorBoundary key={hint.epoch}><Suspense fallback={<p role="status">Loading editor…</p>}><RichTextSurface document={provider.current.sharedDocument} provider={provider.current}
-      readOnly={readOnly || (state.phase !== 'ready' && state.phase !== 'offline')} /></Suspense></RichEditorBoundary>) : <>
+      readOnly={readOnly || !state.editable} /></Suspense></RichEditorBoundary>) : <>
       <label htmlFor="editor-content" className="editor-label">Document text</label>
-      <textarea ref={plainEditor} id="editor-content" value={state.text} readOnly={readOnly || (state.phase !== 'ready' && state.phase !== 'offline')}
+      <textarea ref={plainEditor} id="editor-content" value={state.text} readOnly={readOnly || !state.editable}
         onChange={event => provider.current?.setText(event.target.value)} onSelect={event => {
           const instance = provider.current; if (!instance) return;
           const text = instance.sharedDocument.getText('content');

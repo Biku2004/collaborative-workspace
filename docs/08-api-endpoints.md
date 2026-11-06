@@ -1,4 +1,4 @@
-# API endpoint reference through Lesson 31
+# API endpoint reference through Lesson 32
 
 This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 
@@ -59,3 +59,5 @@ Socket `JOIN` accepts an optional `format` field. A join without it represents a
 For presence, a format-aware client can add `"presence":true` to `JOIN`. It can then send `PRESENCE` with `version`, `anchor` and `head`; each endpoint is canonical Base64 encoding of at most 128 bytes of Yjs relative-position data. The server attaches the document ID, authenticated user ID and email, and a server-generated per-connection presence ID before relaying to other opted-in, authorized peers in the same room. Clients cannot provide identity fields. A best-effort `PRESENCE_LEFT` uses that connection ID. Traffic is limited to 10 observations per connection per second, is disposable under queue pressure and is not stored as document updates. Receivers expire stale observations locally; see [Lesson 28](lessons/28-collaborator-presence.md).
 
 Lesson 28's selection timing regression is covered by a deterministic browser test; presence redraws are queued so they do not synchronously restore a stale editor selection.
+
+Membership removal and capability-reducing role changes invalidate the affected user's document connections in that workspace after commit, including idle connections. Rolled-back changes do not close them, and other workspaces under the same session remain usable. Send-time queries still check current access; results older than five seconds from lookup start are rejected. This bounds socket authorization freshness, not delivery of already-authorized frames or recall of cached data. HTTP checkpoint/revision/restore publication shares the session guard used by logout. See [Lesson 32](lessons/32-active-session-revocation.md).

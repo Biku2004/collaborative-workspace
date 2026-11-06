@@ -66,3 +66,7 @@ The compact engineering review traced authentication, room isolation, queue pres
 **Why can the server not trust a user ID in a presence message?** An authenticated user could name another account. The identity must come from the authenticated connection, and the server must still check access to the document before sending to peers.
 
 **Why do we need both a disconnect message and expiry?** A graceful close can remove a cursor promptly. A network failure can lose that notification, so receivers also remove stale observations after a bounded interval.
+
+## Lesson 32 follow-up: delayed selectionchange
+
+Queued metadata alone was insufficient when native `selectionchange` arrived after the queued redraw. Lesson 32 adds a deterministic delayed-notification regression that fails with the prior queued implementation. Presence redraw now waits for the DOM and ProseMirror selections to agree, retries on editor/selection/composition events and cancels pending work on cleanup. The immediate and delayed native-selection tests both pass. See [Lesson 32](32-active-session-revocation.md) for the verification record.

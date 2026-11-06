@@ -4,7 +4,7 @@ import { ApiError, currentUser, documentBaseline } from './api';
 import { verifiedState } from './verifiedState';
 
 type Phase = 'connecting' | 'syncing' | 'ready' | 'offline' | 'waiting' | 'failed';
-export type EditorState = { phase: Phase; text: string; pending: number; message: string; hasLocalState: boolean; nextEpoch?: number };
+export type EditorState = { phase: Phase; text: string; pending: number; message: string; hasLocalState: boolean; editable: boolean; nextEpoch?: number };
 type Pending = { id: string; payload: string };
 type UpdateEvent = { sequence: number; payload: string };
 export type CollaborationFormat = 'PLAIN_TEXT_V1' | 'RICH_TEXT_V1';
@@ -165,13 +165,13 @@ export class DocumentProvider {
     if (update.byteLength > 8192 || this.pending.length > MAX_PENDING) {
       this.fail('This edit is too large or the pending queue is full. Copy your text before leaving.'); return;
     }
-    if (this.phase === 'ready' || this.phase === 'offline') this.message = this.phase === 'offline' ? 'Saving locally…' : 'Saving…';
+    if (this.canEdit()) this.message = this.phase === 'ready' ? 'Saving…' : 'Saving locally…';
     this.emit(); this.persist();
   };
 
   setText(next: string): void {
     const text = this.text;
-    if (!text || (this.phase !== 'ready' && this.phase !== 'offline')) return;
+    if (!text || !this.canEdit()) return;
     if (new TextEncoder().encode(next).byteLength > MAX_TEXT_BYTES) {
       this.message = 'The learning editor is limited to 4,000 UTF-8 bytes.'; this.emit(); return;
     }
@@ -190,7 +190,7 @@ export class DocumentProvider {
       if (removed) text.delete(start, removed);
       if (inserted) text.insert(start, inserted);
     });
-    if (this.phase === 'ready' || this.phase === 'offline') { this.message = this.phase === 'offline' ? 'Saving locally…' : 'Saving…'; this.emit(); }
+    if (this.canEdit()) { this.message = this.phase === 'ready' ? 'Saving…' : 'Saving locally…'; this.emit(); }
   }
 
   private persist(after?: () => void): void {
@@ -383,7 +383,10 @@ export class DocumentProvider {
   }
   private clearPresence(): void { if (this.presence.size) { this.presence.clear(); this.emitPresence(); } }
   private emitPresence(): void { const snapshot = [...this.presence.values()]; for (const listener of this.presenceListeners) listener(snapshot); }
-  private emit(): void { if (!this.disposed) this.changed({ phase: this.phase, text: this.text?.toString() ?? '', pending: this.pending.length, message: this.message, hasLocalState: this.hasLocalState, nextEpoch: this.nextEpoch }); }
+  private canEdit(): boolean {
+    return this.phase === 'ready' || (this.hasLocalState && ['connecting', 'syncing', 'offline'].includes(this.phase));
+  }
+  private emit(): void { if (!this.disposed) this.changed({ phase: this.phase, text: this.text?.toString() ?? '', pending: this.pending.length, message: this.message, hasLocalState: this.hasLocalState, editable: this.canEdit(), nextEpoch: this.nextEpoch }); }
   destroy(): void {
     this.disposed = true; this.identityAbort?.abort(); clearInterval(this.presenceTimer); clearTimeout(this.presenceSendTimer); clearTimeout(this.syncTimer); clearTimeout(this.saveTimer); clearTimeout(this.connectionTimer); clearTimeout(this.retryTimer); window.removeEventListener('online', this.onOnline); window.removeEventListener('offline', this.onOffline); this.text?.unobserve(this.onText); this.doc.off('update', this.onUpdate);
     this.doc.destroy(); this.socket?.close();

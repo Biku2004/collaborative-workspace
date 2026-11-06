@@ -18,6 +18,23 @@ test('presence arriving between native selection movement and selectionchange pr
   await expect(editor).toHaveText('Hello!');
 });
 
+test('presence redraw waits for a delayed native selectionchange', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(async () => {
+    const host = document.createElement('div'); host.id = 'delayed-presence-boundary'; document.body.append(host);
+    const path = '/test/rich-presence-harness.tsx';
+    const harness = await import(/* @vite-ignore */ path) as typeof import('./rich-presence-harness'); harness.mount(host);
+  });
+  const editor = page.getByRole('textbox', { name: 'Document text' });
+  await editor.fill('Hello'); await editor.press('Control+A');
+  await page.evaluate(async () => {
+    const path = '/test/rich-presence-harness.tsx';
+    const harness = await import(/* @vite-ignore */ path) as typeof import('./rich-presence-harness');
+    await harness.insertAtDelayedNativeEnd(document.getElementById('delayed-presence-boundary')!);
+  });
+  await expect(editor).toHaveText('Hello!');
+});
+
 test('isolated rich-text surfaces apply supported formatting and viewer mode', async ({ page }) => {
   await page.goto('/');
   await page.evaluate(async () => {

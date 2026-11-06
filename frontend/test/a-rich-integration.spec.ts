@@ -177,11 +177,11 @@ test('rich editors synchronize, recover offline edits, and enforce viewer writes
     viewerRoleSet = true;
     const bobCsrf = await (await bob.request.get('/api/csrf')).json() as { token: string; headerName: string };
     expect((await bob.request.post(createUrl, { headers: { [bobCsrf.headerName]: bobCsrf.token }, data: { title: 'Denied', format: 'RICH_TEXT_V1' } })).status()).toBe(403);
-    await editorB.focus(); await editorB.press('Control+End'); await editorB.pressSequentially('private');
     await expect(b.getByRole('alert')).toContainText(/draft|access|connection/i, { timeout: 15000 });
     await expect(editorB).toHaveAttribute('contenteditable', 'false');
+    await editorB.focus(); await editorB.press('Control+End'); await editorB.pressSequentially('private');
     const rejectedDraft = await editorB.innerText();
-    expect(rejectedDraft).toMatch(/^Hello!\S/);
+    expect(rejectedDraft).toBe('Hello!');
     await b.waitForTimeout(500);
     await expect(editorB).toHaveText(rejectedDraft);
     await expect(editorA).toHaveText('Hello!');

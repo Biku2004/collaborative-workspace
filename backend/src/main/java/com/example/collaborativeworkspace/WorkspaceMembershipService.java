@@ -12,10 +12,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class WorkspaceMembershipService {
     private final WorkspaceRepository workspaces;
     private final UserRepository users;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
-    public WorkspaceMembershipService(WorkspaceRepository workspaces, UserRepository users) {
+    public WorkspaceMembershipService(WorkspaceRepository workspaces, UserRepository users, org.springframework.context.ApplicationEventPublisher events) {
         this.workspaces = workspaces;
         this.users = users;
+        this.events = events;
     }
 
     @Transactional(readOnly = true)
@@ -41,6 +43,9 @@ public class WorkspaceMembershipService {
         var oldRole = workspaces.memberRole(workspaceId, target);
         protectLastOwner(workspaceId, oldRole.orElse(null), request.role());
         workspaces.upsertMember(workspaceId, target, request.role());
+        if (oldRole.filter(role -> (role == WorkspaceRole.OWNER && request.role() != WorkspaceRole.OWNER) ||
+                (role == WorkspaceRole.EDITOR && request.role() == WorkspaceRole.VIEWER)).isPresent())
+            events.publishEvent(new WorkspaceAccessReduced(workspaceId, target));
         return new WorkspaceMember(target, email, request.role());
     }
 
@@ -51,6 +56,7 @@ public class WorkspaceMembershipService {
         WorkspaceRole oldRole = workspaces.memberRole(workspaceId, target).orElseThrow(WorkspaceResourceNotFoundException::new);
         protectLastOwner(workspaceId, oldRole, null);
         workspaces.removeMember(workspaceId, target);
+        events.publishEvent(new WorkspaceAccessReduced(workspaceId, target));
     }
 
     private UUID actorId(String email) {

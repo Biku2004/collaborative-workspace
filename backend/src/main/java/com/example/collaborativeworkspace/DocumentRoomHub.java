@@ -17,6 +17,7 @@ import org.springframework.web.socket.WebSocketSession;
 @Profile("dev")
 public class DocumentRoomHub {
     static final int MAX_CONNECTIONS = 256;
+    static final long MAX_AUTH_CHECK_NANOS = TimeUnit.SECONDS.toNanos(5);
     private final ConcurrentHashMap<String, Peer> peers = new ConcurrentHashMap<>();
     private final AtomicInteger count = new AtomicInteger();
     private final ThreadPoolExecutor executor = new ThreadPoolExecutor(4, 4, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(128),
@@ -24,7 +25,14 @@ public class DocumentRoomHub {
     private final DocumentRepository documents;
     private final WorkspaceRepository workspaces;
     private final tools.jackson.databind.json.JsonMapper json;
-    public DocumentRoomHub(DocumentRepository documents, WorkspaceRepository workspaces, tools.jackson.databind.json.JsonMapper json) { this.documents = documents; this.workspaces = workspaces; this.json = json; }
+    private final java.util.function.LongSupplier nanoClock;
+    @org.springframework.beans.factory.annotation.Autowired
+    public DocumentRoomHub(DocumentRepository documents, WorkspaceRepository workspaces, tools.jackson.databind.json.JsonMapper json) {
+        this(documents, workspaces, json, System::nanoTime);
+    }
+    DocumentRoomHub(DocumentRepository documents, WorkspaceRepository workspaces, tools.jackson.databind.json.JsonMapper json, java.util.function.LongSupplier nanoClock) {
+        this.documents = documents; this.workspaces = workspaces; this.json = json; this.nanoClock = nanoClock;
+    }
 
     final class Peer {
         final WebSocketSession socket;
@@ -38,6 +46,7 @@ public class DocumentRoomHub {
         volatile boolean roomReady;
         volatile boolean presenceEnabled;
         volatile boolean hasPresence;
+        volatile boolean revoked;
         private long presenceWindowNanos;
         private int presenceCount;
         Peer(WebSocketSession socket) {
@@ -49,20 +58,31 @@ public class DocumentRoomHub {
             sender = new BoundedSocketSender(socket, executor, () -> remove(socket));
         }
         boolean sessionValid() {
-            try { http.getCreationTime(); return socket.isOpen(); }
+            try { http.getCreationTime(); return !revoked && socket.isOpen(); }
             catch (IllegalStateException ex) { return false; }
         }
-        boolean workspaceAllowed() { return sessionValid() && workspaces.memberRole(workspace, user).isPresent(); }
+        boolean workspaceAllowed() {
+            long started = nanoClock.getAsLong();
+            return sessionValid() && workspaces.memberRole(workspace, user).isPresent() && current(started);
+        }
+        boolean current(long started) {
+            long elapsed = nanoClock.getAsLong() - started;
+            return elapsed >= 0 && elapsed <= MAX_AUTH_CHECK_NANOS && sessionValid();
+        }
         synchronized boolean allowPresence(long now) {
             if (presenceWindowNanos == 0 || now - presenceWindowNanos >= TimeUnit.SECONDS.toNanos(1)) {
                 presenceWindowNanos = now; presenceCount = 0;
             }
             return ++presenceCount <= 10;
         }
-        boolean allowed(UUID id) { return sessionValid() && documents.canRead(workspace, id, user); }
+        boolean allowed(UUID id) {
+            long started = nanoClock.getAsLong();
+            return sessionValid() && documents.canRead(workspace, id, user) && current(started);
+        }
         java.util.Optional<String> readableFormat(UUID id) {
             if (!sessionValid()) return java.util.Optional.empty();
-            return documents.findVisible(id, user).filter(document -> workspace.equals(document.workspaceId())).map(Document::collaborationFormat);
+            long started = nanoClock.getAsLong();
+            return documents.findVisible(id, user).filter(document -> workspace.equals(document.workspaceId()) && current(started)).map(Document::collaborationFormat);
         }
     }
 
@@ -73,6 +93,15 @@ public class DocumentRoomHub {
         return peer;
     }
     Peer get(WebSocketSession socket) { return peers.get(socket.getId()); }
+    /** Mark every affected peer before attempting any potentially slow transport close. */
+    void invalidate(UUID workspace, UUID user) {
+        var affected = peers.values().stream().filter(peer -> workspace.equals(peer.workspace) && user.equals(peer.user)).toList();
+        for (Peer peer : affected) peer.revoked = true;
+        for (Peer peer : affected) {
+            try { peer.sender.close(CloseStatus.POLICY_VIOLATION); }
+            catch (RuntimeException ex) { org.slf4j.LoggerFactory.getLogger(getClass()).warn("Access invalidation close failed: {}", ex.getClass().getName()); }
+        }
+    }
     void remove(WebSocketSession socket) {
         Peer peer = peers.remove(socket.getId());
         if (peer != null) { count.decrementAndGet(); clearPresence(peer); peer.sender.close(CloseStatus.NORMAL); }
@@ -108,16 +137,23 @@ public class DocumentRoomHub {
     void notifyHeads(DocumentUpdateRepository updates, tools.jackson.databind.json.JsonMapper json) {
         for (Peer peer : peers.values()) {
             UUID document = peer.document;
-            if (document == null || !peer.roomReady) continue;
             try {
+                if (!peer.sessionValid()) { peer.sender.close(CloseStatus.POLICY_VIOLATION); continue; }
+                if (document == null || !peer.roomReady) {
+                    if (!peer.workspaceAllowed()) peer.sender.close(CloseStatus.POLICY_VIOLATION);
+                    continue;
+                }
+                long started = nanoClock.getAsLong();
                 var snapshot = updates.findAccessible(peer.workspace, document, peer.user);
-                if (snapshot.isEmpty()) { peer.sender.close(CloseStatus.POLICY_VIOLATION); continue; }
+                if (snapshot.isEmpty() || !peer.current(started)) { peer.sender.close(CloseStatus.POLICY_VIOLATION); continue; }
                 var head = snapshot.get();
                 String value = json.writeValueAsString(java.util.Map.of("type", "HEAD", "version", 1, "documentId", document,
                         "epoch", head.epoch(), "sequence", head.sequence()));
                 peer.sender.send(value, () -> document.equals(peer.document) && peer.allowed(document));
             } catch (RuntimeException ex) {
                 org.slf4j.LoggerFactory.getLogger(getClass()).warn("Head notification failed: {}", ex.getClass().getName());
+                peer.revoked = true;
+                peer.sender.close(CloseStatus.POLICY_VIOLATION);
             }
         }
     }

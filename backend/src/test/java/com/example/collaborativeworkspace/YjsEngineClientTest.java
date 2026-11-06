@@ -38,6 +38,8 @@ class YjsEngineClientTest {
             var json = JsonMapper.builder().build();
             var client = new YjsEngineClient("http://127.0.0.1:" + server.getAddress().getPort(), json, Duration.ofSeconds(2));
             assertTrue(client.reconstructRich(List.of()).initialized());
+            assertEquals("", client.materialize("RICH_TEXT_V1", new byte[] {0, 0}).text());
+            assertThrows(IllegalArgumentException.class, () -> client.materialize("OTHER", new byte[] {0, 0}));
             var sent = json.readTree(requestBody.get());
             assertEquals(2, sent.path("version").intValue()); assertEquals("RICH_TEXT_V1", sent.path("format").asText());
             assertTrue(sent.path("mode").isMissingNode());
@@ -51,6 +53,7 @@ class YjsEngineClientTest {
             assertThrows(IllegalArgumentException.class, () -> client.reconstructRichForCommit(List.of()));
             mode.set(6);
             assertFalse(client.reconstructRich(List.of()).initialized());
+            assertTrue(assertThrows(YjsEngineException.class, () -> client.materialize("RICH_TEXT_V1", new byte[] {0, 0})).rejected());
             assertTrue(assertThrows(YjsEngineException.class, () -> client.reconstructRichForCommit(List.of(new byte[] {0}, new byte[] {1}))).rejected());
             mode.set(7);
             assertTrue(client.reconstructRich(List.of()).initialized());

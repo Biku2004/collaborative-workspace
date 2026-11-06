@@ -85,8 +85,22 @@ public class YjsEngineClient {
         return candidate;
     }
 
+    /** Read-only materialization for derived projections. This never accepts or commits an update. */
+    public Candidate materialize(String format, byte[] source) {
+        if ("PLAIN_TEXT_V1".equals(format)) return reconstruct(List.of(source));
+        if (!"RICH_TEXT_V1".equals(format)) throw new IllegalArgumentException("Unsupported format");
+        JsonNode body = request(List.of(source), true, false);
+        var candidate = richCandidate(body);
+        if (!candidate.initialized()) throw new YjsEngineException(true);
+        return new Candidate(RichSearchText.extract(body.path("document")), candidate.checkpoint());
+    }
+
     private RichCandidate reconstructRich(List<byte[]> updates, boolean commit) {
         JsonNode body = request(updates, true, commit);
+        return richCandidate(body);
+    }
+
+    private RichCandidate richCandidate(JsonNode body) {
         if (body == null || !body.isObject() || !body.path("version").isIntegralNumber() || !body.path("version").canConvertToInt() || body.path("version").intValue() != 2 ||
                 !body.path("status").isTextual() || !"candidate".equals(body.path("status").asText()) ||
                 !body.path("format").isTextual() || !"RICH_TEXT_V1".equals(body.path("format").asText()) ||

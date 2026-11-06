@@ -528,6 +528,8 @@ class DocumentUpdateEndToEndTest {
             assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM document_updates WHERE document_id=?", Integer.class, document));
             byte[] checkpoint = jdbc.queryForObject("SELECT checkpoint FROM document_streams WHERE document_id=?", byte[].class, document);
             assertTrue(engineClient.reconstructRich(java.util.List.of(checkpoint)).initialized());
+            var searchable = engineClient.materialize("RICH_TEXT_V1", checkpoint);
+            assertEquals("Rich edit", searchable.text()); assertArrayEquals(checkpoint, searchable.checkpoint());
             var materialized = checkpointService.create(workspace, document, ownerId);
             assertEquals(2, materialized.checkpoint().sequence());
             assertTrue(engineClient.reconstructRich(java.util.List.of(materialized.checkpoint().bytes())).initialized());

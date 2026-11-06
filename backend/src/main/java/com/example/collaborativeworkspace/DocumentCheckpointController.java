@@ -21,7 +21,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class DocumentCheckpointController {
     private final DocumentCheckpointService checkpoints;
     private final UserRepository users;
-    public DocumentCheckpointController(DocumentCheckpointService checkpoints, UserRepository users) { this.checkpoints = checkpoints; this.users = users; }
+    private final SocketSessionRegistry sessions;
+    public DocumentCheckpointController(DocumentCheckpointService checkpoints, UserRepository users, SocketSessionRegistry sessions) { this.checkpoints = checkpoints; this.users = users; this.sessions = sessions; }
 
     public record Created(long epoch, long throughSequence, long observedHead, String format, String sha256) {}
     public record View(long epoch, long throughSequence, String format, String checkpoint, String sha256) {}
@@ -31,7 +32,7 @@ public class DocumentCheckpointController {
             Authentication authentication, HttpServletRequest request) {
         UUID actor = users.findIdByEmail(authentication.getName()).orElseThrow(() -> new CheckpointException("NOT_FOUND"));
         HttpSession session = request.getSession(false);
-        var result = checkpoints.create(workspaceId, documentId, actor, () -> valid(session));
+        var result = checkpoints.create(workspaceId, documentId, actor, sessions.publicationGuard(session), () -> valid(session));
         var checkpoint = result.checkpoint();
         return ResponseEntity.status(HttpStatus.CREATED).cacheControl(CacheControl.noStore()).body(new Created(checkpoint.epoch(), checkpoint.sequence(),
                 result.observedHead(), checkpoint.format(), Base64.getEncoder().encodeToString(checkpoint.digest())));

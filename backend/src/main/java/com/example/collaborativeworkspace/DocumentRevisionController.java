@@ -18,13 +18,14 @@ public class DocumentRevisionController {
     public record Preview(DocumentRevisionRepository.Summary revision, String checkpoint, String sha256) {}
     private final DocumentRevisionService revisions;
     private final UserRepository users;
-    public DocumentRevisionController(DocumentRevisionService revisions, UserRepository users) { this.revisions = revisions; this.users = users; }
+    private final SocketSessionRegistry sessions;
+    public DocumentRevisionController(DocumentRevisionService revisions, UserRepository users, SocketSessionRegistry sessions) { this.revisions = revisions; this.users = users; this.sessions = sessions; }
     private UUID actor(Authentication authentication) { return users.findIdByEmail(authentication.getName()).orElseThrow(() -> new RevisionException("NOT_FOUND")); }
     @PostMapping
     public ResponseEntity<DocumentRevisionRepository.Summary> create(@PathVariable UUID workspaceId, @PathVariable UUID documentId,
             @Valid @RequestBody CreateRevisionRequest request, Authentication authentication, HttpServletRequest http) {
         var session = http.getSession(false);
-        var result = revisions.create(workspaceId, documentId, actor(authentication), request, () -> {
+        var result = revisions.create(workspaceId, documentId, actor(authentication), request, sessions.publicationGuard(session), () -> {
             if (session == null) return false;
             try { session.getCreationTime(); return true; } catch (IllegalStateException ex) { return false; }
         });

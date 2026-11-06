@@ -40,8 +40,13 @@ public class DocumentCheckpointService {
     }
 
     public Published create(UUID workspace, UUID document, UUID actor, BooleanSupplier sessionValid) {
+        return create(workspace, document, actor, sessionValid, sessionValid);
+    }
+
+    public Published create(UUID workspace, UUID document, UUID actor, Object sessionGuard, BooleanSupplier sessionValid) {
         Objects.requireNonNull(workspace); Objects.requireNonNull(document); Objects.requireNonNull(actor);
         Objects.requireNonNull(sessionValid);
+        Objects.requireNonNull(sessionGuard);
         if (!jobs.acquire()) throw new CheckpointException("CHECKPOINT_BUSY");
         try {
             if (!sessionValid.getAsBoolean()) throw new CheckpointException("ACCESS_DENIED");
@@ -81,26 +86,28 @@ public class DocumentCheckpointService {
             if (!Arrays.equals(state, validated) || (through == head.sequence() && !Arrays.equals(state, head.checkpoint())))
                 throw new CheckpointException("CHECKPOINT_VERIFICATION_FAILED");
             var proposed = new DocumentCheckpointRepository.Checkpoint(document, head.epoch(), through, head.collaborationFormat(), state, hash(state));
-            var result = transaction.execute(status -> {
-                if (!workspaces.lockWorkspace(workspace)) throw new CheckpointException("NOT_FOUND");
-                if (!updates.lockDocument(workspace, document)) throw new CheckpointException("NOT_FOUND");
-                if (!sessionValid.getAsBoolean()) throw new CheckpointException("ACCESS_DENIED");
-                var current = accessible(workspace, document, actor);
-                requireAllowed(current, true);
-                if (current.epoch() != head.epoch()) throw new CheckpointException("EPOCH_CHANGED");
-                if (!current.collaborationFormat().equals(head.collaborationFormat()) || current.sequence() < through)
-                    throw new CheckpointException("CHECKPOINT_VERIFICATION_FAILED");
-                updates.ensureStream(document);
-                if (!checkpoints.insert(proposed)) {
-                    var existing = checkpoints.latest(document, head.epoch(), through).orElseThrow(() -> new CheckpointException("CHECKPOINT_VERIFICATION_FAILED"));
-                    verify(existing, head.collaborationFormat());
-                    if (existing.sequence() != through || !Arrays.equals(existing.bytes(), proposed.bytes()))
+            synchronized (sessionGuard) {
+                var result = transaction.execute(status -> {
+                    if (!workspaces.lockWorkspace(workspace)) throw new CheckpointException("NOT_FOUND");
+                    if (!updates.lockDocument(workspace, document)) throw new CheckpointException("NOT_FOUND");
+                    if (!sessionValid.getAsBoolean()) throw new CheckpointException("ACCESS_DENIED");
+                    var current = accessible(workspace, document, actor);
+                    requireAllowed(current, true);
+                    if (current.epoch() != head.epoch()) throw new CheckpointException("EPOCH_CHANGED");
+                    if (!current.collaborationFormat().equals(head.collaborationFormat()) || current.sequence() < through)
                         throw new CheckpointException("CHECKPOINT_VERIFICATION_FAILED");
-                    return existing;
-                }
-                return proposed;
-            });
-            return new Published(Objects.requireNonNull(result), head.sequence());
+                    updates.ensureStream(document);
+                    if (!checkpoints.insert(proposed)) {
+                        var existing = checkpoints.latest(document, head.epoch(), through).orElseThrow(() -> new CheckpointException("CHECKPOINT_VERIFICATION_FAILED"));
+                        verify(existing, head.collaborationFormat());
+                        if (existing.sequence() != through || !Arrays.equals(existing.bytes(), proposed.bytes()))
+                            throw new CheckpointException("CHECKPOINT_VERIFICATION_FAILED");
+                        return existing;
+                    }
+                    return proposed;
+                });
+                return new Published(Objects.requireNonNull(result), head.sequence());
+            }
         } finally { jobs.release(); }
     }
 

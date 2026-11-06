@@ -31,7 +31,11 @@ public class DocumentRevisionService {
         transaction = new TransactionTemplate(manager); transaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
     public DocumentRevisionRepository.Summary create(UUID workspace, UUID document, UUID actor, CreateRevisionRequest request, BooleanSupplier sessionValid) {
+        return create(workspace, document, actor, request, sessionValid, sessionValid);
+    }
+    public DocumentRevisionRepository.Summary create(UUID workspace, UUID document, UUID actor, CreateRevisionRequest request, Object sessionGuard, BooleanSupplier sessionValid) {
         Objects.requireNonNull(request); Objects.requireNonNull(sessionValid);
+        Objects.requireNonNull(sessionGuard);
         String name = request.name() == null ? "" : request.name().strip();
         if (name.isBlank() || name.length() > 100 || name.chars().anyMatch(Character::isISOControl) || request.requestId() == null) throw new InvalidUserInputException();
         var captured = accessible(workspace, document, actor, true);
@@ -49,16 +53,18 @@ public class DocumentRevisionService {
             } else validated = engine.reconstruct(List.of(state)).checkpoint();
             if (!Arrays.equals(state, validated)) throw new RevisionException("REVISION_INVALID");
             byte[] digest = hash(state);
-            return Objects.requireNonNull(transaction.execute(status -> {
-                if (!workspaces.lockWorkspace(workspace) || !updates.lockDocument(workspace, document)) throw new RevisionException("NOT_FOUND");
-                if (!sessionValid.getAsBoolean()) throw new RevisionException("ACCESS_DENIED");
-                var current = accessible(workspace, document, actor, true);
-                var duplicate = revisions.retry(document, actor, request.requestId());
-                if (duplicate.isPresent()) return retry(duplicate.get(), name);
-                if (current.epoch() != captured.epoch()) throw new RevisionException("EPOCH_CHANGED");
-                if (!current.collaborationFormat().equals(captured.collaborationFormat())) throw new RevisionException("SCHEMA_UNSUPPORTED");
-                return revisions.insert(document, actor, request.requestId(), name, captured.epoch(), captured.sequence(), captured.collaborationFormat(), state, digest);
-            }));
+            synchronized (sessionGuard) {
+                return Objects.requireNonNull(transaction.execute(status -> {
+                    if (!workspaces.lockWorkspace(workspace) || !updates.lockDocument(workspace, document)) throw new RevisionException("NOT_FOUND");
+                    if (!sessionValid.getAsBoolean()) throw new RevisionException("ACCESS_DENIED");
+                    var current = accessible(workspace, document, actor, true);
+                    var duplicate = revisions.retry(document, actor, request.requestId());
+                    if (duplicate.isPresent()) return retry(duplicate.get(), name);
+                    if (current.epoch() != captured.epoch()) throw new RevisionException("EPOCH_CHANGED");
+                    if (!current.collaborationFormat().equals(captured.collaborationFormat())) throw new RevisionException("SCHEMA_UNSUPPORTED");
+                    return revisions.insert(document, actor, request.requestId(), name, captured.epoch(), captured.sequence(), captured.collaborationFormat(), state, digest);
+                }));
+            }
         } catch (YjsEngineException ex) {
             if (ex.rejected()) throw new RevisionException("REVISION_INVALID");
             throw ex;

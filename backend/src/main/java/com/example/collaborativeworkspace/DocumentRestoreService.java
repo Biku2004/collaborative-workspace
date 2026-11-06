@@ -29,6 +29,10 @@ public class DocumentRestoreService {
         this.workspaces = workspaces; this.formats = formats; this.engine = engine; this.jobs = jobs; this.transaction = new TransactionTemplate(manager);
     }
     public DocumentRestoreRepository.Restored restore(UUID workspace, UUID document, UUID actor, RestoreRevisionRequest request, BooleanSupplier sessionValid) {
+        return restore(workspace, document, actor, request, sessionValid, sessionValid);
+    }
+    public DocumentRestoreRepository.Restored restore(UUID workspace, UUID document, UUID actor, RestoreRevisionRequest request, Object sessionGuard, BooleanSupplier sessionValid) {
+        java.util.Objects.requireNonNull(sessionGuard); java.util.Objects.requireNonNull(sessionValid);
         if (request == null || request.revisionId() == null || request.requestId() == null || request.expectedEpoch() == null || request.expectedHead() == null ||
                 request.expectedEpoch() < 0 || request.expectedEpoch() == Long.MAX_VALUE || request.expectedHead() < 0) throw new InvalidUserInputException();
         var captured = accessible(workspace, document, actor, true);
@@ -41,21 +45,23 @@ public class DocumentRestoreService {
         if (!jobs.acquire()) throw new RevisionException("REVISION_BUSY");
         try {
             byte[] fresh = engine.freshState(captured.collaborationFormat(), revision.bytes());
-            return java.util.Objects.requireNonNull(transaction.execute(status -> {
-                // Same workspace -> document order as writers and membership changes.
-                if (!workspaces.lockWorkspace(workspace) || !updates.lockDocument(workspace, document)) throw new RevisionException("NOT_FOUND");
-                if (!sessionValid.getAsBoolean()) throw new RevisionException("ACCESS_DENIED");
-                var current = accessible(workspace, document, actor, true);
-                var duplicate = restores.retry(document, actor, request.requestId());
-                if (duplicate.isPresent()) return retry(duplicate.get(), request);
-                expected(current, request);
-                if (!current.collaborationFormat().equals(captured.collaborationFormat())) throw new RevisionException("SCHEMA_UNSUPPORTED");
-                updates.ensureStream(document);
-                var result = restores.commit(document, actor, request, fresh);
-                if (!checkpoints.insert(new DocumentCheckpointRepository.Checkpoint(document, result.epoch(), 0, current.collaborationFormat(), fresh, hash(fresh))))
-                    throw new RevisionException("REVISION_INVALID");
-                return result;
-            }));
+            synchronized (sessionGuard) {
+                return java.util.Objects.requireNonNull(transaction.execute(status -> {
+                    // Same workspace -> document order as writers and membership changes.
+                    if (!workspaces.lockWorkspace(workspace) || !updates.lockDocument(workspace, document)) throw new RevisionException("NOT_FOUND");
+                    if (!sessionValid.getAsBoolean()) throw new RevisionException("ACCESS_DENIED");
+                    var current = accessible(workspace, document, actor, true);
+                    var duplicate = restores.retry(document, actor, request.requestId());
+                    if (duplicate.isPresent()) return retry(duplicate.get(), request);
+                    expected(current, request);
+                    if (!current.collaborationFormat().equals(captured.collaborationFormat())) throw new RevisionException("SCHEMA_UNSUPPORTED");
+                    updates.ensureStream(document);
+                    var result = restores.commit(document, actor, request, fresh);
+                    if (!checkpoints.insert(new DocumentCheckpointRepository.Checkpoint(document, result.epoch(), 0, current.collaborationFormat(), fresh, hash(fresh))))
+                        throw new RevisionException("REVISION_INVALID");
+                    return result;
+                }));
+            }
         } catch (YjsEngineException ex) {
             if (ex.rejected()) throw new RevisionException("REVISION_INVALID");
             throw ex;

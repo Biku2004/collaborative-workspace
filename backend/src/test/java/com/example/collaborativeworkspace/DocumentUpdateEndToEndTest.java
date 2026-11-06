@@ -51,8 +51,62 @@ class DocumentUpdateEndToEndTest {
     @Autowired DocumentCheckpointService checkpointService;
     @Autowired DocumentRevisionService revisionService;
     @Autowired DocumentRestoreService restoreService;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean DocumentRestoreRepository restoreRepository;
     @Autowired tools.jackson.databind.json.JsonMapper json;
     static Process engine;
+
+    @Test void httpRestoreAndLogoutHaveAnOrderedPublicationBoundary() throws Exception {
+        UUID actor = UUID.randomUUID(), workspace = null;
+        String email = "restore-logout-" + actor + "@example.com", base = "http://127.0.0.1:" + port;
+        var allowValidation = new java.util.concurrent.CountDownLatch(1); var allowCommit = new java.util.concurrent.CountDownLatch(1);
+        try {
+            users.create(actor, email, encoder.encode("test-user-password")); workspace = workspaces.create(email, "HTTP publication guard").id();
+            UUID document = documents.create(workspace, email, "HTTP publication guard").id();
+            var revision = revisionService.create(workspace, document, actor, new CreateRevisionRequest("Empty", UUID.randomUUID()), () -> true);
+            var client = HttpClient.newBuilder().cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL)).build(); login(client, base, email);
+            String path = base + "/api/workspaces/" + workspace + "/documents/" + document + "/restore";
+            String token = json.readTree(get(client, base + "/api/csrf").body()).path("token").asText();
+            var validating = new java.util.concurrent.CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                validating.countDown(); if (!allowValidation.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Validation guard test timed out");
+                return invocation.callRealMethod();
+            }).when(engineClient).freshState(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(byte[].class));
+            var request = HttpRequest.newBuilder(URI.create(path)).header("Content-Type", "application/json").header("X-CSRF-TOKEN", token)
+                    .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(new RestoreRevisionRequest(revision.id(), UUID.randomUUID(), 0L, 0L)))).build();
+            var response = client.sendAsync(request, HttpResponse.BodyHandlers.ofString()); assertTrue(validating.await(10, TimeUnit.SECONDS));
+            var logout = HttpRequest.newBuilder(URI.create(base + "/logout")).header("X-CSRF-TOKEN", token).POST(HttpRequest.BodyPublishers.noBody()).build();
+            try {
+                // Engine work does not hold the guard, so logout completes before validation resumes.
+                assertEquals(302, client.sendAsync(logout, HttpResponse.BodyHandlers.discarding()).get(5, TimeUnit.SECONDS).statusCode());
+            } finally { allowValidation.countDown(); }
+            assertEquals(403, response.get(10, TimeUnit.SECONDS).statusCode());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_restore_events WHERE document_id=?", Integer.class, document));
+
+            login(client, base, email); token = json.readTree(get(client, base + "/api/csrf").body()).path("token").asText();
+            var committing = new java.util.concurrent.CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Object result = invocation.callRealMethod(); committing.countDown();
+                if (!allowCommit.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Commit guard test timed out");
+                return result;
+            }).when(restoreRepository).commit(org.mockito.ArgumentMatchers.eq(document), org.mockito.ArgumentMatchers.eq(actor),
+                    org.mockito.ArgumentMatchers.any(RestoreRevisionRequest.class), org.mockito.ArgumentMatchers.any(byte[].class));
+            request = HttpRequest.newBuilder(URI.create(path)).header("Content-Type", "application/json").header("X-CSRF-TOKEN", token)
+                    .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(new RestoreRevisionRequest(revision.id(), UUID.randomUUID(), 0L, 0L)))).build();
+            response = client.sendAsync(request, HttpResponse.BodyHandlers.ofString()); assertTrue(committing.await(10, TimeUnit.SECONDS));
+            logout = HttpRequest.newBuilder(URI.create(base + "/logout")).header("X-CSRF-TOKEN", token).POST(HttpRequest.BodyPublishers.noBody()).build();
+            var loggedOut = client.sendAsync(logout, HttpResponse.BodyHandlers.discarding());
+            try { assertThrows(java.util.concurrent.TimeoutException.class, () -> loggedOut.get(250, TimeUnit.MILLISECONDS)); }
+            finally { allowCommit.countDown(); }
+            assertEquals(200, response.get(10, TimeUnit.SECONDS).statusCode()); assertEquals(302, loggedOut.get(10, TimeUnit.SECONDS).statusCode());
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_restore_events WHERE document_id=?", Integer.class, document));
+            assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=? AND epoch=1 AND through_sequence=0", Integer.class, document));
+            assertEquals(401, get(client, base + "/api/me").statusCode());
+        } finally {
+            allowValidation.countDown(); allowCommit.countDown();
+            if (workspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", workspace); jdbc.update("DELETE FROM workspaces WHERE id=?", workspace); }
+            jdbc.update("DELETE FROM app_users WHERE id=?", actor);
+        }
+    }
 
     @Test void restoresOrderAgainstConcurrentEditsAndKeepOldHistory() throws Exception {
         UUID actor = UUID.randomUUID(), workspace = null;

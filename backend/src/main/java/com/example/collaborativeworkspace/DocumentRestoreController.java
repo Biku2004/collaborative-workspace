@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.*;
 public class DocumentRestoreController {
     private final DocumentRestoreService restores;
     private final UserRepository users;
-    public DocumentRestoreController(DocumentRestoreService restores, UserRepository users) { this.restores = restores; this.users = users; }
+    private final SocketSessionRegistry sessions;
+    public DocumentRestoreController(DocumentRestoreService restores, UserRepository users, SocketSessionRegistry sessions) { this.restores = restores; this.users = users; this.sessions = sessions; }
     private UUID actor(Authentication authentication) { return users.findIdByEmail(authentication.getName()).orElseThrow(() -> new RevisionException("NOT_FOUND")); }
     @GetMapping("/baseline")
     public ResponseEntity<DocumentRestoreService.Baseline> baseline(@PathVariable UUID workspaceId, @PathVariable UUID documentId, Authentication authentication) {
@@ -25,7 +26,7 @@ public class DocumentRestoreController {
     public ResponseEntity<DocumentRestoreRepository.Restored> restore(@PathVariable UUID workspaceId, @PathVariable UUID documentId,
             Authentication authentication, @Valid @RequestBody RestoreRevisionRequest request, HttpServletRequest http) {
         var session = http.getSession(false);
-        var result = restores.restore(workspaceId, documentId, actor(authentication), request, () -> {
+        var result = restores.restore(workspaceId, documentId, actor(authentication), request, sessions.publicationGuard(session), () -> {
             if (session == null) return false;
             try { session.getCreationTime(); return true; } catch (IllegalStateException ex) { return false; }
         });

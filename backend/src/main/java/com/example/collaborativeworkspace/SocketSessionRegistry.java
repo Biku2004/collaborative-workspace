@@ -20,6 +20,28 @@ public class SocketSessionRegistry implements HttpSessionListener {
     }
     private final ConcurrentHashMap<String, SessionGuard> sessions = new ConcurrentHashMap<>();
 
+    /** HTTP publishers and socket writers must share the guard observed by session destruction. */
+    public Object publicationGuard(HttpSession http) {
+        if (http == null) throw new org.springframework.security.access.AccessDeniedException("Session unavailable");
+        synchronized (http) {
+            try {
+                http.getCreationTime();
+                String id = http.getId();
+                SessionGuard guard = sessions.computeIfAbsent(id, ignored -> new SessionGuard());
+                synchronized (guard) {
+                    try {
+                        http.getCreationTime();
+                        if (guard.destroyed) throw new org.springframework.security.access.AccessDeniedException("Session unavailable");
+                        return guard;
+                    } catch (IllegalStateException ex) {
+                        sessions.remove(id, guard);
+                        throw new org.springframework.security.access.AccessDeniedException("Session unavailable");
+                    }
+                }
+            } catch (IllegalStateException ex) { throw new org.springframework.security.access.AccessDeniedException("Session unavailable"); }
+        }
+    }
+
     public boolean register(HttpSession http, WebSocketSession socket) {
         synchronized (http) {
             try {

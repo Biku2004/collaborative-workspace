@@ -1,6 +1,6 @@
 # 7. Roadmap after Lesson 7
 
-This is a **plan** for the remaining features. Lessons 8–28 are complete as local learning milestones; Lessons 29–37 remain planned. Lesson 27's rich-text feature remains gated and has unresolved security and operational limitations. Lesson numbers below continue the [learning checklist](00-learning-checklist.md); the broader architecture guide uses different **step** numbers. One lesson delivers one primary capability, although a difficult lesson may take more than one session. We implement, explain and verify each lesson before moving to the next.
+This is a **plan** for the remaining features. Lessons 8–28 are complete as local learning milestones; Lessons 29–37 remain incomplete. Lesson 27's rich-text feature remains gated and has unresolved security and operational limitations. Lesson numbers below continue the [learning checklist](00-learning-checklist.md); the broader architecture guide uses different **step** numbers. One lesson delivers one primary capability, although a difficult lesson may take more than one session. We implement, explain and verify each lesson before moving to the next.
 
 ## Where we are now
 
@@ -242,4 +242,4 @@ Comments, mentions, exports, object storage, Kafka and explicit room ownership a
 
 ## Next lesson
 
-Continue with **Lesson 29: create verified checkpoints**. Local collaborator presence and its limitations are described in the [Lesson 28 guide](lessons/28-collaborator-presence.md).
+Continue with **Lesson 29: create verified checkpoints**. Local collaborator presence and its limitations are described in the [Lesson 28 guide](lessons/28-collaborator-presence.md); checkpoint work is documented in [Lesson 29](lessons/29-verified-checkpoints.md).

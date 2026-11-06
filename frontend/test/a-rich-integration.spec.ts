@@ -1,6 +1,6 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 
-test('rich editors synchronize, recover offline edits, and enforce viewer writes', async ({ browser, baseURL }) => {
+test('rich editors synchronize, recover offline edits, and enforce viewer writes', async ({ browser, baseURL }, testInfo) => {
   test.skip(process.env.WORKSPACE_E2E_EDITING !== 'true', 'Requires the real local Yjs engine');
   test.setTimeout(90000);
   const alice = await browser.newContext({ baseURL }), bob = await browser.newContext({ baseURL });
@@ -114,8 +114,10 @@ test('rich editors synchronize, recover offline edits, and enforce viewer writes
     });
     await expect(b.getByLabel('Collaborators')).toHaveCount(0, { timeout: 10000 });
     await b.reload(); await select(b);
+    await expect(editorB.locator('h2')).toHaveText('Hello');
     await alice.setOffline(false);
     await expect(a.locator('.editor-status')).toHaveText(/Saved|Up to date/, { timeout: 20000 });
+    await expect(editorA.locator('h2')).toHaveText('Hello');
     await Promise.all([alice.setOffline(true), bob.setOffline(true)]);
     await Promise.all([a.evaluate(() => (window as unknown as Window & { disconnectDocument: () => void }).disconnectDocument()),
       b.evaluate(() => (window as unknown as Window & { disconnectDocument: () => void }).disconnectDocument())]);
@@ -123,12 +125,39 @@ test('rich editors synchronize, recover offline edits, and enforce viewer writes
     await expect(b.locator('.editor-status')).toContainText(/Offline|Saved locally/);
     await editorA.press('Control+A'); await a.getByRole('button', { name: 'Italic', exact: true }).click();
     await editorB.press('Control+A'); await b.getByRole('button', { name: 'Bold', exact: true }).click();
-    await editorB.focus(); await editorB.press('Control+End'); await editorB.pressSequentially('!');
+    await expect(editorA).toHaveText('Hello'); await expect(editorB).toHaveText('Hello');
+    await editorB.focus(); await editorB.press('Control+End');
+    await expect.poll(() => b.evaluate(() => window.getSelection()?.toString() ?? '')).toBe('');
+    await editorB.pressSequentially('!');
+    await expect(editorB).toHaveText('Hello!');
     await expect(a.locator('.editor-status')).toHaveText('Saved locally; pending server confirmation');
     await expect(b.locator('.editor-status')).toHaveText('Saved locally; pending server confirmation');
-    await Promise.all([alice.setOffline(false), bob.setOffline(false)]);
-    await expect(editorA).toHaveText('Hello!', { timeout: 20000 });
-    await expect(editorB).toHaveText('Hello!', { timeout: 20000 });
+    // Synthetic fixture only: retain each persisted Yjs state and its pending updates if reconciliation fails.
+    async function snapshot(page: Page, userId: string) {
+      return page.evaluate(async ({ userId, workspaceId, documentId }) => {
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open('workspace-offline-v1'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+        });
+        try {
+          const key = JSON.stringify([userId.toLowerCase(), workspaceId.toLowerCase(), documentId.toLowerCase(), 0, 'RICH_TEXT_V1']);
+          const value = await new Promise<{ state: Uint8Array; pending: unknown[] } | undefined>((resolve, reject) => {
+            const request = db.transaction('documents').objectStore('documents').get(key); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+          });
+          if (!value) throw new Error('Missing synthetic offline fixture');
+          let binary = ''; for (const byte of value.state) binary += String.fromCharCode(byte);
+          return { state: btoa(binary), pending: value.pending };
+        } finally { db.close(); }
+      }, { userId, workspaceId: process.env.WORKSPACE_E2E_SHARED_WORKSPACE!, documentId: original.id });
+    }
+    const offlineStates = await Promise.all([snapshot(a, process.env.WORKSPACE_E2E_ALICE_ID!), snapshot(b, process.env.WORKSPACE_E2E_BOB_ID!)]);
+    try {
+      await Promise.all([alice.setOffline(false), bob.setOffline(false)]);
+      await expect(editorA).toHaveText('Hello!', { timeout: 20000 });
+      await expect(editorB).toHaveText('Hello!', { timeout: 20000 });
+    } catch (error) {
+      await testInfo.attach('synthetic-offline-states', { body: JSON.stringify(offlineStates), contentType: 'application/json' });
+      throw error;
+    }
     await expect(editorA.locator('em')).toContainText('Hello');
     await expect(editorB.locator('em')).toContainText('Hello');
     await expect(editorA.locator('strong')).toHaveCount(0);

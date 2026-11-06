@@ -7,7 +7,7 @@ import type * as Y from 'yjs';
 import { richPresence } from './richPresence';
 import type { DocumentProvider } from './provider';
 
-type Props = { document: Y.Doc; readOnly: boolean; provider?: DocumentProvider };
+type Props = { document: Y.Doc; readOnly: boolean; provider?: Pick<DocumentProvider, 'getPresence' | 'observePresence' | 'setPresence'> };
 const attributes = (readOnly: boolean) => ({ role: 'textbox', 'aria-label': 'Document text', 'aria-multiline': 'true', 'aria-readonly': String(readOnly) });
 
 /** The caller must supply a synchronized, initialized document of the negotiated schema. */

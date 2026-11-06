@@ -1,11 +1,11 @@
 import { Extension } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, ySyncPluginKey } from '@tiptap/y-tiptap';
+import { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, ySyncPluginKey } from '@tiptap/y-tiptap';
 import type { DocumentProvider } from './provider';
 
 /** Cursor data never enters the Yjs document or its durable update queue. */
-export function richPresence(provider: DocumentProvider) {
+export function richPresence(provider: Pick<DocumentProvider, 'getPresence' | 'observePresence' | 'setPresence'>) {
   return Extension.create({
     name: 'workspacePresence',
     addProseMirrorPlugins() {
@@ -47,7 +47,9 @@ export function richPresence(provider: DocumentProvider) {
           };
           let subscribed = false;
           const unsubscribe = provider.observePresence(() => {
-            if (subscribed && !view.isDestroyed) view.dispatch(view.state.tr.setMeta('workspacePresence', true));
+            // Let native selectionchange and any active editor transaction finish first.
+            // Immediate dispatch can restore a stale selection before the browser reports its movement.
+            if (subscribed && !view.isDestroyed) setMeta(view, 'workspacePresence', true);
           });
           subscribed = true;
           queueMicrotask(() => { if (!view.isDestroyed) publish(); });

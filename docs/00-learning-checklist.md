@@ -43,7 +43,7 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 - [x] **Lesson 25 — Offline persistence and a pending queue.** See [Lesson 25](lessons/25-offline-persistence.md). Browser-stored drafts and stable retry IDs are tested; browser storage is not a server durability guarantee.
 - [x] **Lesson 26 — Reconnect and reconcile.** See [Lesson 26](lessons/26-reconnect-and-reconcile.md). Automatic reconnect rechecks identity and authorization, replays gaps and retains rejected local work.
 - [x] **Lesson 27 — Rich-text editor.** See [Lesson 27](lessons/27-rich-text-design.md). The local learning criteria are verified; the feature remains gated with unresolved security and history limits.
-- [x] **Lesson 28 — Collaborator presence.** See [Lesson 28](lessons/28-collaborator-presence.md). Authenticated, bounded ephemeral presence is verified locally; aggregate capacity and multi-instance behavior remain future work.
+- [x] **Lesson 28 — Collaborator presence.** See [Lesson 28](lessons/28-collaborator-presence.md). Authenticated, bounded ephemeral presence is verified locally, including a regression test for native selection timing; aggregate capacity and multi-instance behavior remain future work.
 - [ ] Add checkpoints, named revisions and safe restore in separate lessons.
 - [ ] Add search, monitoring, multi-instance communication and failure testing as separate milestones.
 

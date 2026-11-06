@@ -1,6 +1,6 @@
 # Lesson 28 — Collaborator presence
 
-Presence answers “who is here and where are they looking?” It is temporary: a missing cursor is inconvenient, but losing a confirmed document edit is not. This lesson's local learning criteria are complete; the limitations below remain open.
+Presence answers “who is here and where are they looking?” It is temporary: a missing cursor is inconvenient, but losing a confirmed document edit is not. **Status: local learning criteria complete.** The selection timing regression found during revalidation is fixed and covered by a deterministic browser test. The limitations below remain open.
 
 ## Design
 
@@ -55,7 +55,7 @@ For a manual experiment, follow the three-window setup in [Lesson 27](27-rich-te
 
 ## Verification and review
 
-The full Maven suite passed 47 tests with no failures or skips, including the complete browser fixture. The browser scenarios exercise two clients, cursor movement and selection, expiry when a departure message is lost, and editing after presence loss. Socket tests cover the server-supplied identity, isolation and rejection of client-supplied identity fields. Queue and rate tests exercise bounded behavior. After changing expiry to a monotonic clock, the focused browser scenarios and offline-shell checks passed again, including a simulated backward wall-clock change. These checks are examples, not a production security certification.
+Revalidation found that a synchronous presence redraw could run after a native cursor movement but before the browser's `selectionchange` event. The editor then restored its stale full-text selection, so the next typed character replaced the text. A deterministic harness reproduced `!` instead of `Hello!` before the fix and preserved `Hello!` afterward. Presence redraws now use the pinned Yjs binding's queued metadata helper. The complete browser fixture passed with this regression, real two-client editing, expiry, the 80-edit workload and offline-shell recovery. Socket tests cover authenticated identity, isolation and rejection of client-supplied identity fields; queue and rate tests exercise bounded behavior. These checks are examples, not a production security certification.
 
 The compact engineering review traced authentication, room isolation, queue pressure, expiry, malformed positions and reconnect behavior. It identified and fixed compatibility with non-participating older clients and a wall-clock dependency in expiry. The remaining aggregate fan-out risk is described above. The rich-text position-history concern remains unresolved and the rich-text feature stays gated. See [the review notes](28-presence-review.md) for scope and evidence.
 

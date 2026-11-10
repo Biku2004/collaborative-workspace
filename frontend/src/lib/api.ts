@@ -7,6 +7,8 @@ export type Revision = { id: string; name: string; createdBy: string; epoch: num
 export type RevisionPreview = { revision: Revision; checkpoint: string; sha256: string };
 export type Baseline = { epoch: number; head: number; format: string; checkpoint: string; sha256: string };
 export type RestoreRequest = { revisionId: string; requestId: string; expectedEpoch: number; expectedHead: number };
+export type SearchMatch = { documentId: string; title: string; format: string; excerpt: string; epoch: number; throughSequence: number; head: number; indexedAt: string; stale: boolean };
+export type SearchResults = { items: SearchMatch[]; hasMore: boolean; coverage: { totalDocuments: number; currentDocuments: number; pendingDocuments: number }; indexingEnabled: boolean };
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -89,4 +91,14 @@ export async function restoreRevision(workspaceId: string, documentId: string, r
   const token = await csrf();
   return (await checked(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}/restore`, { method: 'POST',
     headers: { 'Content-Type': 'application/json', [token.headerName]: token.token }, body: JSON.stringify(request) })).json() as Promise<{ epoch: number }>;
+}
+export async function searchDocuments(workspaceId: string, query: string, signal?: AbortSignal): Promise<SearchResults> {
+  return (await checked(`/api/workspaces/${encodeURIComponent(workspaceId)}/search?q=${encodeURIComponent(query)}`, { signal, cache: 'no-store' })).json() as Promise<SearchResults>;
+}
+export async function rebuildSearch(workspaceId: string): Promise<void> {
+  const token = await csrf();
+  await checked(`/api/workspaces/${encodeURIComponent(workspaceId)}/search/rebuild`, { method: 'POST', headers: { [token.headerName]: token.token } });
+}
+export async function getDocument(id: string, signal?: AbortSignal): Promise<Document> {
+  return (await checked(`/api/documents/${encodeURIComponent(id)}`, { signal, cache: 'no-store' })).json() as Promise<Document>;
 }

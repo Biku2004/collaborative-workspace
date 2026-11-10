@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiError, createRichDocument, currentUser, documentPage, login, logout, workspacePage, type CurrentUser, type Document, type Workspace } from '../lib/api';
 import Editor from '../features/editor/Editor';
+const SearchPanel = lazy(() => import('../features/search/SearchPanel'));
 import { clearOfflineContext, readOfflineContext, saveOfflineContext, type OfflineContext } from '../features/offline/offlineContext';
 
 function errorMessage(error: unknown): string {
@@ -206,6 +207,10 @@ export default function App() {
       {openDocument && selected && user.id && (openDocument.collaborationFormat === 'PLAIN_TEXT_V1' || openDocument.collaborationFormat === 'RICH_TEXT_V1') ? <Editor key={`${user.id}:${openDocument.id}`} userId={user.id} workspaceId={selected.id} documentId={openDocument.id} title={openDocument.title} format={openDocument.collaborationFormat} readOnly={selected.role === 'VIEWER'} onDirty={setEditorDirty} onBack={closeDocument} /> : <section className="documents" aria-labelledby="documents-heading"><div className="section-title"><div><p className="eyebrow">{selected ? selected.name : 'SELECT A WORKSPACE'}</p><h2 id="documents-heading">Documents</h2></div><span>02</span></div>
         {!selected && <div className="empty-state"><span className="empty-symbol" aria-hidden="true">✳</span><h3>Nothing selected yet.</h3><p>Choose a workspace on the left to browse its documents.</p></div>}
         {selected && <>
+          {!offline && <Suspense fallback={<p role="status">Loading search…</p>}><SearchPanel key={`${user.id}:${selected.id}`} workspaceId={selected.id} owner={selected.role === 'OWNER'} onOpen={document => {
+            if (user.id) saveOfflineContext({ user: { username: user.username, id: user.id }, workspace: selected, document });
+            setOpenDocument(document);
+          }} /></Suspense>}
           {!offline && selected.role !== 'VIEWER' && <form className="create-document" onSubmit={createDocument}>
             <label htmlFor="new-document-title">New rich-text document</label>
             <div><input id="new-document-title" value={newTitle} onChange={event => setNewTitle(event.target.value)} maxLength={200} required />

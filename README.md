@@ -1,6 +1,6 @@
 # Collaborative Workspace — learning and implementation plan
 
-Status: Lessons 1–32 are implemented as local learning milestones. Stored users can log in, manage workspace membership, and create, read, list, rename and archive authorized workspace documents. A bounded collaboration prototype supports locally persisted drafts, automatic reconnection, ephemeral presence, verified checkpoints and named revisions with read-only preview and safe epoch-based restore. Active membership reduction invalidates affected document connections after commit; HTTP history publication is ordered against logout. Lesson 27's rich-text path remains behind a default-off feature gate because its security and history limits are unresolved; it is not production-ready.
+Status: Lessons 1–33 are implemented as local learning milestones. Stored users can log in, manage workspace membership, and create, read, list, rename and archive authorized workspace documents. A bounded collaboration prototype supports locally persisted drafts, automatic reconnection, ephemeral presence, verified checkpoints and named revisions with read-only preview and safe epoch-based restore. Authorized committed-content search includes a browser interface, indexing freshness and owner-requested rebuilds. Active membership reduction invalidates affected document connections after commit; HTTP history publication is ordered against logout. Lesson 27's rich-text path remains behind a default-off feature gate because its security and history limits are unresolved; it is not production-ready.
 
 We will assume no prior experience with Spring and explain Java concepts whenever they are needed. We will implement one feature per lesson and verify it before moving on. The goal is a project you can build, debug, and defend in an interview.
 
@@ -39,6 +39,7 @@ See the [repository structure guide](docs/13-repository-structure.md) to locate 
 | [Lesson 30: Named revisions](docs/lessons/30-named-revisions.md) | Immutable committed snapshots, safe retries, authorized listing and preview |
 | [Lesson 31: Safe revision restore](docs/lessons/31-safe-revision-restore.md) | Fresh history, atomic epoch transitions and quarantined local draft recovery |
 | [Lesson 32: Active access revocation](docs/lessons/32-active-session-revocation.md) | Ordered logout/publication, after-commit invalidation and explicit read-revocation limits |
+| [Lesson 33: Authorized search](docs/lessons/33-authorized-content-search.md) | Asynchronous committed-text projection, current-membership filtering, search UI and freshness |
 | [Quality review fixes](docs/09-quality-hardening.md) | Strict versions, test isolation, consistent errors, safe retries and bounded lists |
 | [Offline and reconnect security checkpoint](docs/12-offline-reconnect-security-checkpoint.md) | Verified boundaries and outstanding risks through Lesson 26 |
 | [Current API endpoints](docs/08-api-endpoints.md) | Methods, routes, access requirements and current routes, authorization and response details |

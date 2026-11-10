@@ -113,3 +113,9 @@ time { margin-left: auto; color: #8c9b90; font-size: 12px; white-space: nowrap; 
 .remote-cursor::after { content: attr(data-label); position: absolute; left: -2px; bottom: 100%; background: #4169aa; color: white; font: 10px sans-serif; padding: 2px 4px; white-space: nowrap; }
 .collaborators { font-size: .8rem; margin: .5rem 0; }
 .collaborators ul { display: flex; flex-wrap: wrap; gap: .5rem 1rem; padding: 0; list-style: none; }
+.search-panel { margin-block: 1rem 1.5rem; padding-block: 1rem; border-block: 1px solid #d9d8d2; }
+.search-controls { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.search-controls input { flex: 1; min-width: 12rem; }
+.search-results { list-style: none; padding: 0; }
+.search-results li { padding-block: .75rem; border-bottom: 1px solid #e4e3dc; }
+.search-excerpt { white-space: pre-wrap; overflow-wrap: anywhere; margin-block: .5rem; }

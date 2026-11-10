@@ -38,6 +38,7 @@ frontend/src/
 │   ├── editor/                             Editor screen and document synchronization provider
 │   │   └── rich/                           Rich-text surface, presence and error boundary
 │   ├── history/                            Named revisions and revision preview
+│   ├── search/                             Content search UI, freshness and rebuild controls
 │   └── offline/                            IndexedDB, local navigation hints and retained drafts
 └── shared/yjs/                             Shared snapshot verification
 
@@ -50,4 +51,4 @@ When adding a feature, start in its feature directory. A document-history contro
 
 Existing historical lesson snippets may show the original flat Java package. The source files and this guide describe the current layout. Concrete source-path references in the lesson documents have been updated.
 
-The Lesson 33 search implementation remains in progress. Its presence under `search` does not mark that lesson complete.
+Lesson 33 search is verified as a local learning milestone; its implementation and configuration are described in the [search lesson](lessons/33-authorized-content-search.md).

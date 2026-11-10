@@ -1,5 +1,8 @@
 package com.example.collaborativeworkspace.collaboration.transport;
 
+import com.example.collaborativeworkspace.observability.WorkspaceTelemetry;
+import static com.example.collaborativeworkspace.observability.WorkspaceTelemetry.Stage.*;
+
 import com.example.collaborativeworkspace.collaboration.updates.DocumentUpdateRepository;
 import com.example.collaborativeworkspace.documents.Document;
 import com.example.collaborativeworkspace.documents.DocumentRepository;
@@ -21,6 +24,16 @@ import org.springframework.web.socket.WebSocketSession;
 @Component
 @Profile("dev")
 public class DocumentRoomHub {
+    private WorkspaceTelemetry telemetry = WorkspaceTelemetry.disabled();
+    @org.springframework.beans.factory.annotation.Autowired
+    void observe(WorkspaceTelemetry telemetry) {
+        this.telemetry = telemetry;
+        telemetry.gauge("connections", this, hub -> hub.count.get());
+        telemetry.gauge("sender.tasks", this, hub -> hub.executor.getQueue().size());
+        telemetry.gauge("sender.active", this, hub -> hub.executor.getActiveCount());
+        telemetry.gauge("socket.queued.messages", this, hub -> hub.peers.values().stream().mapToInt(peer -> peer.sender.queuedMessages()).sum());
+        telemetry.gauge("socket.queued.bytes", this, hub -> hub.peers.values().stream().mapToInt(peer -> peer.sender.queuedBytes()).sum());
+    }
     static final int MAX_CONNECTIONS = 256;
     static final long MAX_AUTH_CHECK_NANOS = TimeUnit.SECONDS.toNanos(5);
     private final ConcurrentHashMap<String, Peer> peers = new ConcurrentHashMap<>();
@@ -60,7 +73,7 @@ public class DocumentRoomHub {
             user = UUID.fromString((String) socket.getAttributes().get("userId"));
             userEmail = (String) socket.getAttributes().get("userEmail");
             http = (HttpSession) socket.getAttributes().get("httpSession");
-            sender = new BoundedSocketSender(socket, executor, () -> remove(socket));
+            sender = new BoundedSocketSender(socket, executor, () -> remove(socket), telemetry);
         }
         boolean sessionValid() {
             try { http.getCreationTime(); return !revoked && socket.isOpen(); }
@@ -92,7 +105,7 @@ public class DocumentRoomHub {
     }
 
     Peer add(WebSocketSession socket) {
-        if (count.incrementAndGet() > MAX_CONNECTIONS) { count.decrementAndGet(); return null; }
+        if (count.incrementAndGet() > MAX_CONNECTIONS) { count.decrementAndGet(); telemetry.signal(WorkspaceTelemetry.Signal.CONNECTION_REJECTED); return null; }
         Peer peer = new Peer(socket);
         if (peers.putIfAbsent(socket.getId(), peer) != null) { count.decrementAndGet(); return null; }
         return peer;
@@ -134,9 +147,12 @@ public class DocumentRoomHub {
         }
     }
     void broadcastCommitted(UUID workspace, UUID document, String json) {
+        broadcastCommitted(workspace, document, json, null);
+    }
+    void broadcastCommitted(UUID workspace, UUID document, String json, UUID correlationId) {
         for (Peer target : peers.values()) {
             if (target.roomReady && workspace.equals(target.workspace) && document.equals(target.document))
-                target.sender.send(json, () -> document.equals(target.document) && target.allowed(document));
+                target.sender.send(json, () -> document.equals(target.document) && target.allowed(document), correlationId);
         }
     }
     void notifyHeads(DocumentUpdateRepository updates, tools.jackson.databind.json.JsonMapper json) {

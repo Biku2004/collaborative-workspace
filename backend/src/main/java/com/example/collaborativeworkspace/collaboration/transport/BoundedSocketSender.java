@@ -1,5 +1,6 @@
 package com.example.collaborativeworkspace.collaboration.transport;
 
+import com.example.collaborativeworkspace.observability.WorkspaceTelemetry;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.concurrent.Executor;
@@ -12,7 +13,8 @@ import org.springframework.web.socket.WebSocketSession;
 /** A single ordered sender per socket. Limits include queued messages, plus at most one in-flight message. */
 final class BoundedSocketSender {
     static final int MAX_MESSAGES = 16, MAX_BYTES = 16384;
-    private record Pending(TextMessage message, BooleanSupplier allowed, boolean ephemeral) {}
+    private record Pending(TextMessage message, BooleanSupplier allowed, boolean ephemeral, java.util.UUID correlationId) {}
+    private final WorkspaceTelemetry telemetry;
     private final WebSocketSession socket;
     private final Executor executor;
     private final Runnable cleanup;
@@ -21,19 +23,26 @@ final class BoundedSocketSender {
     private boolean running, closed;
 
     BoundedSocketSender(WebSocketSession socket, Executor executor, Runnable cleanup) {
+        this(socket, executor, cleanup, WorkspaceTelemetry.disabled());
+    }
+    BoundedSocketSender(WebSocketSession socket, Executor executor, Runnable cleanup, WorkspaceTelemetry telemetry) {
         this.socket = socket; this.executor = executor; this.cleanup = cleanup;
+        this.telemetry = telemetry;
     }
 
     void send(String value, BooleanSupplier allowed) {
-        enqueue(value, allowed, false);
+        send(value, allowed, null);
+    }
+    void send(String value, BooleanSupplier allowed, java.util.UUID correlationId) {
+        enqueue(value, allowed, false, correlationId);
     }
 
     /** Presence is disposable: a slow peer must not lose its durable-edit connection for it. */
     void sendEphemeral(String value, BooleanSupplier allowed) {
-        enqueue(value, allowed, true);
+        enqueue(value, allowed, true, null);
     }
 
-    private void enqueue(String value, BooleanSupplier allowed, boolean ephemeral) {
+    private void enqueue(String value, BooleanSupplier allowed, boolean ephemeral, java.util.UUID correlationId) {
         TextMessage message = new TextMessage(value);
         boolean fail = false;
         synchronized (this) {
@@ -42,20 +51,22 @@ final class BoundedSocketSender {
                 var iterator = queue.iterator();
                 while (iterator.hasNext()) {
                     var item = iterator.next();
-                    if (item.ephemeral()) { bytes -= item.message().getPayloadLength(); iterator.remove(); }
+                    if (item.ephemeral()) { bytes -= item.message().getPayloadLength(); iterator.remove(); telemetry.signal(WorkspaceTelemetry.Signal.PRESENCE_DROPPED); }
                 }
             }
-            if (ephemeral && queue.stream().filter(Pending::ephemeral).count() >= 4) return;
+            if (ephemeral && queue.stream().filter(Pending::ephemeral).count() >= 4) { telemetry.signal(WorkspaceTelemetry.Signal.PRESENCE_DROPPED); return; }
             if (queue.size() >= MAX_MESSAGES || bytes + message.getPayloadLength() > MAX_BYTES) {
-                if (ephemeral) return;
+                if (ephemeral) { telemetry.signal(WorkspaceTelemetry.Signal.PRESENCE_DROPPED); return; }
+                telemetry.signal(WorkspaceTelemetry.Signal.QUEUE_OVERFLOW);
                 fail = true;
             }
             else {
-                queue.addLast(new Pending(message, allowed, ephemeral)); bytes += message.getPayloadLength();
+                queue.addLast(new Pending(message, allowed, ephemeral, correlationId)); bytes += message.getPayloadLength();
                 if (!running) {
                     running = true;
                     try { executor.execute(this::drain); }
                     catch (RejectedExecutionException ex) {
+                        telemetry.signal(WorkspaceTelemetry.Signal.EXECUTOR_REJECTED);
                         if (ephemeral) { queue.removeLast(); bytes -= message.getPayloadLength(); running = false; }
                         else fail = true;
                     }
@@ -75,14 +86,26 @@ final class BoundedSocketSender {
                     if (item == null) { running = false; return; }
                     bytes -= item.message().getPayloadLength();
                 }
-                if (!item.allowed().getAsBoolean() || !socket.isOpen()) { close(CloseStatus.POLICY_VIOLATION); return; }
-                socket.sendMessage(item.message());
+                if (item.correlationId() == null) sendItem(item);
+                else telemetry.measure(WorkspaceTelemetry.Stage.SOCKET_SEND, item.correlationId(), () -> { sendItem(item); return null; });
             }
-        } catch (Exception ex) { close(CloseStatus.SERVER_ERROR); }
+        } catch (com.example.collaborativeworkspace.collaboration.updates.DocumentUpdateException denied) { close(CloseStatus.POLICY_VIOLATION); }
+        catch (Exception ex) { telemetry.signal(WorkspaceTelemetry.Signal.SOCKET_FAILED); close(CloseStatus.SERVER_ERROR); }
+    }
+
+    private void sendItem(Pending item) {
+        if (!item.allowed().getAsBoolean() || !socket.isOpen()) {
+            telemetry.signal(WorkspaceTelemetry.Signal.SOCKET_DENIED);
+            close(CloseStatus.POLICY_VIOLATION);
+            throw new com.example.collaborativeworkspace.collaboration.updates.DocumentUpdateException("ACCESS_DENIED");
+        }
+        try { socket.sendMessage(item.message()); }
+        catch (IOException ex) { throw new java.io.UncheckedIOException(ex); }
     }
 
     void close(CloseStatus status) {
         synchronized (this) { if (closed) return; closed = true; queue.clear(); bytes = 0; }
+        telemetry.signal(WorkspaceTelemetry.Signal.SOCKET_CLOSED);
         cleanup.run();
         try { if (socket.isOpen()) socket.close(status); } catch (IOException ignored) { }
     }

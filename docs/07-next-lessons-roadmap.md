@@ -1,6 +1,6 @@
 # 7. Roadmap after Lesson 7
 
-This is a **plan** for the remaining features. Lessons 8–33 are complete as local learning milestones; Lessons 34–37 remain incomplete. Lesson 27's rich-text feature remains gated and has unresolved security and operational limitations. Lesson numbers below continue the [learning checklist](00-learning-checklist.md); the broader architecture guide uses different **step** numbers. One lesson delivers one primary capability, although a difficult lesson may take more than one session. We implement, explain and verify each lesson before moving to the next.
+This is a **plan** for the remaining features. Lessons 8–34 are complete as local learning milestones; Lessons 35–37 remain incomplete. Lesson 27's rich-text feature remains gated and has unresolved security and operational limitations. Lesson numbers below continue the [learning checklist](00-learning-checklist.md); the broader architecture guide uses different **step** numbers. One lesson delivers one primary capability, although a difficult lesson may take more than one session. We implement, explain and verify each lesson before moving to the next.
 
 ## Where we are now
 
@@ -208,7 +208,9 @@ Every coding lesson will include: the problem and a small example; required Java
 
 ## Milestone F — Operate and scale with evidence
 
-### Lesson 34 — Add observability
+### Lesson 34 — Add observability (complete locally)
+
+Implementation, metric meanings, debugging steps and limits: [Lesson 34](lessons/34-monitoring-and-debugging.md).
 
 - **Build:** Structured, redacted logs, traces and metrics for updates, errors, queues and checkpoint lag.
 - **Learn:** SLI, SLO, percentiles, correlation IDs and metric cardinality.
@@ -242,4 +244,4 @@ Comments, mentions, exports, object storage, Kafka and explicit room ownership a
 
 ## Next lesson
 
-Continue with **Lesson 34: observability**. Authorized search, freshness and rebuild behavior are described in [Lesson 33](lessons/33-authorized-content-search.md).
+Continue with **Lesson 35: run two backend instances**. Monitoring and debugging are described in [Lesson 34](lessons/34-monitoring-and-debugging.md).

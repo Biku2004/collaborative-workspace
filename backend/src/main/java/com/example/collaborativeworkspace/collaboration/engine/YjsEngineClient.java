@@ -1,5 +1,8 @@
 package com.example.collaborativeworkspace.collaboration.engine;
 
+import com.example.collaborativeworkspace.observability.WorkspaceTelemetry;
+import static com.example.collaborativeworkspace.observability.WorkspaceTelemetry.Stage.*;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,6 +21,9 @@ import tools.jackson.databind.json.JsonMapper;
 @Component
 @Profile("dev")
 public class YjsEngineClient {
+    private WorkspaceTelemetry telemetry = WorkspaceTelemetry.disabled();
+    @org.springframework.beans.factory.annotation.Autowired
+    void observe(WorkspaceTelemetry telemetry) { this.telemetry = telemetry; }
     private static final int MAX_UPDATE_BYTES = 8192, MAX_RICH_CHECKPOINT_BYTES = 65536, MAX_TOTAL_BYTES = 32768, MAX_UPDATES = 16,
             MAX_RESPONSE_BYTES = 65536, MAX_RICH_RESPONSE_BYTES = 262144;
     private final URI endpoint;
@@ -139,6 +145,9 @@ public class YjsEngineClient {
     }
 
     private JsonNode exchange(URI uri, Map<String, ?> payload, int maximumResponse) {
+        return telemetry.measure(ENGINE, () -> exchangeMeasured(uri, payload, maximumResponse));
+    }
+    private JsonNode exchangeMeasured(URI uri, Map<String, ?> payload, int maximumResponse) {
         var request = HttpRequest.newBuilder(uri).timeout(timeout).header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(payload))).build();
         try {

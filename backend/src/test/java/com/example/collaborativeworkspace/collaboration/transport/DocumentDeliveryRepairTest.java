@@ -50,6 +50,7 @@ class DocumentDeliveryRepairTest {
     @Autowired PasswordEncoder encoder;
     @Autowired JdbcTemplate jdbc;
     @Autowired JsonMapper json;
+    @Autowired io.micrometer.core.instrument.MeterRegistry metrics;
     @MockitoSpyBean YjsEngineClient engine;
     @DynamicPropertySource static void properties(DynamicPropertyRegistry registry) {
         String database = TestDatabaseGuard.verifiedUrl();
@@ -66,6 +67,7 @@ class DocumentDeliveryRepairTest {
         UUID ownerId = UUID.randomUUID(), workspace = null, secondWorkspace = null;
         String email = "repair-" + ownerId + "@example.com", base = "http://127.0.0.1:" + port;
         WebSocket socket = null, differentDocumentSocket = null, differentWorkspaceSocket = null;
+        var diagnostics = new com.example.collaborativeworkspace.support.DiagnosticLogCapture(com.example.collaborativeworkspace.observability.WorkspaceTelemetry.class);
         try {
             users.create(ownerId, email, encoder.encode("test-user-password"));
             workspace = workspaces.create(email, "repair").id();
@@ -112,6 +114,13 @@ class DocumentDeliveryRepairTest {
             // Resuming the relay later may duplicate data already repaired by replay.
             assertTrue(delivery.relayPending() >= 9);
             for (int i = 1; i <= 9; i++) assertEquals(i, listener.next("UPDATE").path("sequence").longValue());
+            UUID correlation = jdbc.queryForObject("SELECT correlation_id FROM document_update_outbox WHERE document_id=? AND sequence=1", UUID.class, document);
+            long diagnosticDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (!diagnostics.contains(correlation, "socket_send") && System.nanoTime() < diagnosticDeadline) Thread.sleep(10);
+            for (String stage : java.util.List.of("accept", "validate", "commit", "relay", "socket_send")) assertTrue(diagnostics.contains(correlation, stage), stage);
+            assertTrue(metrics.get("workspace.operation").tags("stage", "socket_send", "outcome", "success").timer().count() >= 9);
+            assertEquals(3, metrics.get("workspace.connections").gauge().value());
+            assertTrue(diagnostics.events.stream().allMatch(event -> event.getThrowableProxy() == null && !com.example.collaborativeworkspace.support.DiagnosticLogCapture.rendered(event).contains(email) && !com.example.collaborativeworkspace.support.DiagnosticLogCapture.rendered(event).contains("Hello Java") && !com.example.collaborativeworkspace.support.DiagnosticLogCapture.rendered(event).contains("AQEBAAQB")));
             otherDocumentListener.assertNoType("UPDATE");
             otherWorkspaceListener.assertNoType("UPDATE");
             assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_update_outbox WHERE document_id=? AND published_at IS NULL", Integer.class, document));
@@ -132,6 +141,7 @@ class DocumentDeliveryRepairTest {
             UUID targetWorkspace = workspace;
             assertThrows(IllegalStateException.class, () -> delivery.sync(targetWorkspace, document, ownerId, 0, 0));
         } finally {
+            diagnostics.close();
             if (socket != null) socket.abort();
             if (differentDocumentSocket != null) differentDocumentSocket.abort();
             if (differentWorkspaceSocket != null) differentWorkspaceSocket.abort();
@@ -190,7 +200,10 @@ class DocumentDeliveryRepairTest {
             String[] marker = committed.get(30, TimeUnit.SECONDS).split(":");
             UUID workspace = UUID.fromString(marker[1]), document = UUID.fromString(marker[2]);
             assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_update_outbox WHERE document_id=? AND published_at IS NULL", Integer.class, document));
+            UUID correlation = jdbc.queryForObject("SELECT correlation_id FROM document_update_outbox WHERE document_id=?", UUID.class, document);
+            assertNotNull(correlation);
             child.destroyForcibly(); assertTrue(child.waitFor(5, TimeUnit.SECONDS));
+            assertEquals(correlation, jdbc.queryForObject("SELECT correlation_id FROM document_update_outbox WHERE document_id=?", UUID.class, document));
             // A surviving/restarted process reads the committed log and can resume its outbox relay.
             JsonNode replay = json.readTree(delivery.sync(workspace, document, actor, 0, 0));
             assertEquals(1, replay.path("updates").size());

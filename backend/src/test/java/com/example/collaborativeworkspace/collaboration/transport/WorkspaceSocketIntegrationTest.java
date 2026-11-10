@@ -243,7 +243,7 @@ class WorkspaceSocketIntegrationTest {
                 insertedButUncommitted.countDown();
                 if (!permitCommit.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Timed out waiting to commit");
                 return result;
-            }).when(updateRepository).insertOutbox(org.mockito.ArgumentMatchers.eq(doc), org.mockito.ArgumentMatchers.eq(0L), org.mockito.ArgumentMatchers.eq(1L));
+            }).when(updateRepository).insertOutbox(org.mockito.ArgumentMatchers.eq(doc), org.mockito.ArgumentMatchers.eq(0L), org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.any(java.util.UUID.class));
             try {
                 ownerSocket.sendText(request, true).join();
                 assertTrue(insertedButUncommitted.await(5, TimeUnit.SECONDS));
@@ -275,7 +275,7 @@ class WorkspaceSocketIntegrationTest {
             viewerSocket.sendText(request.replace(updateId.toString(), UUID.randomUUID().toString()), true).join();
             assertTrue(viewerListener.messages.poll(5, TimeUnit.SECONDS).contains("ACCESS_DENIED"));
             org.mockito.Mockito.doThrow(new org.springframework.dao.DataIntegrityViolationException("simulated outbox failure"))
-                    .when(updateRepository).insertOutbox(org.mockito.ArgumentMatchers.eq(doc), org.mockito.ArgumentMatchers.eq(0L), org.mockito.ArgumentMatchers.eq(2L));
+                    .when(updateRepository).insertOutbox(org.mockito.ArgumentMatchers.eq(doc), org.mockito.ArgumentMatchers.eq(0L), org.mockito.ArgumentMatchers.eq(2L), org.mockito.ArgumentMatchers.any(java.util.UUID.class));
             ownerSocket.sendText(request.replace(updateId.toString(), UUID.randomUUID().toString()), true).join();
             assertEquals(1011, ownerListener.closed.get(5, TimeUnit.SECONDS));
             assertNull(ownerListener.messages.poll(300, TimeUnit.MILLISECONDS));
@@ -377,7 +377,7 @@ class WorkspaceSocketIntegrationTest {
                 Object result = invocation.callRealMethod(); insideCommit.countDown();
                 if (!allowCommit.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("Timed out waiting for commit");
                 return result;
-            }).when(updateRepository).insertOutbox(org.mockito.ArgumentMatchers.eq(document), org.mockito.ArgumentMatchers.eq(0L), org.mockito.ArgumentMatchers.eq(1L));
+            }).when(updateRepository).insertOutbox(org.mockito.ArgumentMatchers.eq(document), org.mockito.ArgumentMatchers.eq(0L), org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.any(java.util.UUID.class));
             HttpClient client = client(); login(client, base, owner);
             String csrf = token(get(client, base + "/api/csrf").body());
             URI uri = URI.create("ws://127.0.0.1:" + port + "/api/workspaces/" + workspace + "/socket");

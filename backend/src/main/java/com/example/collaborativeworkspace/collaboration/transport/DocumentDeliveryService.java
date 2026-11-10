@@ -1,5 +1,8 @@
 package com.example.collaborativeworkspace.collaboration.transport;
 
+import com.example.collaborativeworkspace.observability.WorkspaceTelemetry;
+import static com.example.collaborativeworkspace.observability.WorkspaceTelemetry.Stage.*;
+
 import com.example.collaborativeworkspace.collaboration.engine.CollaborationFormatPolicy;
 import com.example.collaborativeworkspace.collaboration.updates.DocumentUpdateException;
 import com.example.collaborativeworkspace.collaboration.updates.DocumentUpdateRepository;
@@ -20,6 +23,9 @@ import tools.jackson.databind.json.JsonMapper;
 @Service
 @Profile("dev")
 public class DocumentDeliveryService {
+    private WorkspaceTelemetry telemetry = WorkspaceTelemetry.disabled();
+    @org.springframework.beans.factory.annotation.Autowired
+    void observe(WorkspaceTelemetry telemetry) { this.telemetry = telemetry; }
     private static final int MAX_UPDATES = 8, MAX_PAGE_BYTES = 14000;
     private final DocumentUpdateRepository updates;
     private final DocumentRoomHub rooms;
@@ -33,6 +39,9 @@ public class DocumentDeliveryService {
     /** A page is a consistent database snapshot; the client tracks the last contiguous applied sequence. */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public String sync(UUID workspace, UUID document, UUID user, long epoch, long after) {
+        return telemetry.measure(SYNC, () -> syncMeasured(workspace, document, user, epoch, after));
+    }
+    private String syncMeasured(UUID workspace, UUID document, UUID user, long epoch, long after) {
         var head = updates.findAccessible(workspace, document, user).orElseThrow(() -> new DocumentUpdateException("NOT_FOUND"));
         if (!formats.supports(head.collaborationFormat())) throw new DocumentUpdateException("SCHEMA_UNSUPPORTED");
         if (epoch != head.epoch()) throw new DocumentUpdateException("EPOCH_CHANGED");
@@ -71,12 +80,15 @@ public class DocumentDeliveryService {
     public int relayPending() {
         var events = updates.lockPendingEvents(32);
         for (var event : events) {
-            var update = event.update();
-            String message = json.writeValueAsString(Map.of("type", "UPDATE", "version", 1, "documentId", update.documentId(),
-                    "epoch", update.epoch(), "sequence", update.sequence(), "updateId", update.updateId(), "userId", update.actor(),
-                    "payload", Base64.getEncoder().encodeToString(update.payload())));
-            rooms.broadcastCommitted(event.workspaceId(), update.documentId(), message);
-            updates.markRelayAttempted(event.eventId());
+            telemetry.measure(RELAY, event.correlationId(), () -> {
+                var update = event.update();
+                String message = json.writeValueAsString(Map.of("type", "UPDATE", "version", 1, "documentId", update.documentId(),
+                        "epoch", update.epoch(), "sequence", update.sequence(), "updateId", update.updateId(), "userId", update.actor(),
+                        "payload", Base64.getEncoder().encodeToString(update.payload())));
+                rooms.broadcastCommitted(event.workspaceId(), update.documentId(), message, event.correlationId());
+                updates.markRelayAttempted(event.eventId());
+                return null;
+            });
         }
         return events.size();
     }

@@ -1,9 +1,12 @@
-# API endpoint reference through Lesson 33
+# API endpoint reference through Lesson 34
 
 This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 
 | Method | Path | Purpose | Access in `dev` | Request and success response |
 |---|---|---|---|---|
+| GET | `/actuator/health` | Basic backend health | BOOTSTRAP session only | Status without component details; unavailable outside dev. |
+| GET | `/actuator/metrics`, `/actuator/metrics/{name}` | Inspect numeric metrics | BOOTSTRAP session only | Fixed stage/outcome labels and numeric aggregates; ordinary users receive 403, anonymous requests receive 401. |
+| GET | `/actuator/prometheus` | Export numeric metrics | BOOTSTRAP session only | Prometheus text exposition; no document, user or session labels. |
 | GET | `/api/status` | Confirm that the application responds | Public | Returns 200 and `{"status":"running"}`. This is not a database readiness check. |
 | GET | `/api/csrf` | Obtain a CSRF token for the current session | Public, `dev` only | Returns 200 with `headerName`, `parameterName`, and `token`; response is marked `no-store`. |
 | GET | `/login` | Display Spring Security's login form | Public, `dev` only | HTML login form with a CSRF token. |
@@ -65,3 +68,5 @@ Lesson 28's selection timing regression is covered by a deterministic browser te
 Membership removal and capability-reducing role changes invalidate the affected user's document connections in that workspace after commit, including idle connections. Rolled-back changes do not close them, and other workspaces under the same session remain usable. Send-time queries still check current access; results older than five seconds from lookup start are rejected. This bounds socket authorization freshness, not delivery of already-authorized frames or recall of cached data. HTTP checkpoint/revision/restore publication shares the session guard used by logout. See [Lesson 32](lessons/32-active-session-revocation.md).
 
 Search indexing is enabled with `WORKSPACE_SEARCH_INDEXING_ENABLED=true` before starting the dev backend; its default poll delay is 2000 ms. A paused worker is disclosed in search responses and the UI. The browser refreshes active results, clears them on denial, and fetches current authorized metadata before opening a result. See [Lesson 33](lessons/33-authorized-content-search.md).
+
+HTTP responses include a server-generated `X-Correlation-ID`. Diagnostic logs omit URLs, request bodies and credentials. Update correlations persist in the outbox and follow async socket sends without changing collaboration frames. See [Lesson 34](lessons/34-monitoring-and-debugging.md) for stage semantics, protected metric access, cached lag freshness and proposed alerts.

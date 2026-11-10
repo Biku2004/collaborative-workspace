@@ -1,5 +1,8 @@
 package com.example.collaborativeworkspace.search;
 
+import com.example.collaborativeworkspace.observability.WorkspaceTelemetry;
+import static com.example.collaborativeworkspace.observability.WorkspaceTelemetry.Stage.*;
+
 import com.example.collaborativeworkspace.collaboration.engine.CollaborationFormatPolicy;
 import com.example.collaborativeworkspace.collaboration.engine.YjsEngineClient;
 import com.example.collaborativeworkspace.collaboration.engine.YjsEngineException;
@@ -18,6 +21,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 @Profile("dev")
 public class DocumentSearchProjector {
+    private WorkspaceTelemetry telemetry = WorkspaceTelemetry.disabled();
+    @org.springframework.beans.factory.annotation.Autowired
+    void observe(WorkspaceTelemetry telemetry) { this.telemetry = telemetry; }
     public record Batch(int attempted, int indexed, int failed, boolean busy) {}
     private final DocumentSearchRepository search;
     private final YjsEngineClient engine;
@@ -36,7 +42,7 @@ public class DocumentSearchProjector {
         for (var source : search.pending(formats.supports("RICH_TEXT_V1"), 4)) {
             if (!jobs.acquire()) return new Batch(attempted, indexed, failed, true);
             attempted++;
-            try { if (index(source)) indexed++; }
+            try { if (telemetry.measure(SEARCH_INDEX, () -> index(source))) indexed++; }
             catch (RuntimeException ex) {
                 failed++;
                 String code = ex instanceof YjsEngineException engineFailure ? (engineFailure.rejected() ? "SOURCE_REJECTED" : "ENGINE_UNAVAILABLE") : "INDEX_UNAVAILABLE";

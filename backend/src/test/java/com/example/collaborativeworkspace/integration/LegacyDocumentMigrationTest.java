@@ -171,6 +171,9 @@ class LegacyDocumentMigrationTest {
                 assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM document_search_projection", Integer.class));
                 assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, document));
                 assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_update_outbox WHERE event_id=?", Integer.class, event));
+                migrations.target("19").load().migrate();
+                assertEquals(event, jdbc.queryForObject("SELECT correlation_id FROM document_update_outbox WHERE event_id=?", UUID.class, event));
+                assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM document_checkpoints WHERE document_id=?", Integer.class, document));
             }
         } finally {
             try (var connection = DriverManager.getConnection(url, user, password); var statement = connection.createStatement()) {

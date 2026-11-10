@@ -56,10 +56,14 @@ class BoundedSocketSenderTest {
 
     @Test void fullSharedExecutorClosesAndClearsTheSocketQueue() throws Exception {
         var socket = mock(WebSocketSession.class); when(socket.isOpen()).thenReturn(true);
-        var sender = new BoundedSocketSender(socket, task -> { throw new java.util.concurrent.RejectedExecutionException(); }, () -> {});
+        var metrics = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        var sender = new BoundedSocketSender(socket, task -> { throw new java.util.concurrent.RejectedExecutionException(); }, () -> {},
+                new com.example.collaborativeworkspace.observability.WorkspaceTelemetry(metrics));
         sender.send("test", () -> true);
         assertEquals(0, sender.queuedMessages());
         verify(socket).close(any());
+        assertEquals(1, metrics.get("workspace.transport").tag("signal", "executor_rejected").counter().count());
+        assertEquals(1, metrics.get("workspace.transport").tag("signal", "socket_closed").counter().count());
     }
 
     @Test void byteLimitAlsoClosesBeforeMessageCountLimit() throws Exception {

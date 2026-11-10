@@ -1,5 +1,8 @@
 package com.example.collaborativeworkspace.collaboration.transport;
 
+import com.example.collaborativeworkspace.observability.WorkspaceTelemetry;
+import static com.example.collaborativeworkspace.observability.WorkspaceTelemetry.Stage.*;
+
 import com.example.collaborativeworkspace.collaboration.updates.DocumentUpdateRepository;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -12,6 +15,9 @@ import tools.jackson.databind.json.JsonMapper;
 @Profile("dev")
 @ConditionalOnProperty(name = "workspace.delivery.enabled", havingValue = "true", matchIfMissing = true)
 public class DocumentDeliveryScheduler {
+    private WorkspaceTelemetry telemetry = WorkspaceTelemetry.disabled();
+    @org.springframework.beans.factory.annotation.Autowired
+    void observe(WorkspaceTelemetry telemetry) { this.telemetry = telemetry; }
     private final DocumentDeliveryService delivery;
     private final DocumentUpdateRepository updates;
     private final DocumentRoomHub rooms;
@@ -23,7 +29,7 @@ public class DocumentDeliveryScheduler {
     }
     @Scheduled(fixedDelayString = "${workspace.delivery.poll-ms:1000}")
     public void poll() {
-        try { if (relayEnabled) delivery.relayPending(); rooms.notifyHeads(updates, json); }
+        try { telemetry.measure(DELIVERY_POLL, () -> { if (relayEnabled) delivery.relayPending(); rooms.notifyHeads(updates, json); return null; }); }
         catch (RuntimeException ex) { org.slf4j.LoggerFactory.getLogger(getClass()).warn("Delivery poll failed: {}", ex.getClass().getName()); }
     }
 }

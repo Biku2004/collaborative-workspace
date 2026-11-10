@@ -14,6 +14,7 @@ backend/src/main/java/com/example/collaborativeworkspace/
 │   ├── updates/                            Durable update acceptance, stream state and update log
 │   └── transport/                          WebSockets, rooms, presence, relay and session registry
 ├── search/                                 Search projection, query API and indexing jobs
+├── observability/                          Correlated diagnostics, HTTP logging and cached lag metrics
 └── common/
     ├── api/                                Shared API errors and status endpoint
     ├── crypto/                             Shared content checksum primitive
@@ -26,9 +27,9 @@ backend/src/main/resources/
 
 backend/src/test/java/com/example/collaborativeworkspace/
 ├── auth/, documents/, workspaces/           Feature tests
-├── collaboration/, search/                 Collaboration and search tests
+├── collaboration/, search/, observability/  Collaboration, search and diagnostic tests
 ├── integration/                            Browser, migration and application-wide checks
-└── support/                                Dedicated test-database safety guard
+└── support/                                Dedicated test-database guard and structured-log capture
 
 frontend/src/
 ├── main.ts                                 Browser entry point
@@ -52,3 +53,5 @@ When adding a feature, start in its feature directory. A document-history contro
 Existing historical lesson snippets may show the original flat Java package. The source files and this guide describe the current layout. Concrete source-path references in the lesson documents have been updated.
 
 Lesson 33 search is verified as a local learning milestone; its implementation and configuration are described in the [search lesson](lessons/33-authorized-content-search.md).
+
+Lesson 34 diagnostics live in `observability`; proposed monitoring rules live in `ops/observability`. See [monitoring and debugging](lessons/34-monitoring-and-debugging.md).

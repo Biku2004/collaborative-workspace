@@ -1,0 +1,61 @@
+# Proposals for the local learning project; tune from measured workloads before enabling notifications.
+# A Prometheus scrape target with authorized access must be configured separately.
+groups:
+  - name: collaborative-workspace
+    rules:
+      - alert: WorkspaceTargetDown
+        expr: up{job="collaborative-workspace"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The configured workspace scrape target is unreachable"
+          description: "Check backend health and authorized scrape access. Stale lag values cannot prove the backend is healthy."
+      - alert: WorkspaceEditsFailing
+        expr: sum by (job, instance) (rate(workspace_operation_seconds_count{stage="accept",outcome="failed"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Edit acceptance has sustained infrastructure failures"
+          description: "Inspect accept, validate and commit stages by correlationId. Expected authorization/schema rejections are excluded."
+      - alert: WorkspaceSlowEdits
+        expr: histogram_quantile(0.95, sum by (job, instance, le) (rate(workspace_operation_seconds_bucket{stage="accept",outcome="success"}[5m]))) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Successful edit acceptance p95 exceeds the proposed 500ms target"
+          description: "Compare validation/engine latency with commit latency. This excludes browser RTT and client application time."
+      - alert: WorkspaceOutboxStalled
+        expr: workspace_outbox_pending > 0 and on (job, instance) workspace_outbox_oldest_seconds > 30 and on (job, instance) workspace_delivery_relay_enabled == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pending committed notifications are not being relayed promptly"
+          description: "Check delivery_poll failures, queue pressure and DB availability. Relay success is an enqueue attempt, not client receipt."
+      - alert: WorkspaceSearchBehind
+        expr: workspace_search_pending_documents > 0 and on (job, instance) workspace_search_indexing_enabled == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Search remains behind committed content"
+          description: "Inspect search_index failures, failed document count and the shared snapshot budget. Hot documents can delay convergence."
+      - alert: WorkspaceSenderPressure
+        expr: sum by (job, instance) (rate(workspace_transport_total{signal=~"queue_overflow|executor_rejected|socket_failed"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Socket senders are failing or shedding load"
+          description: "Inspect queued bytes/messages, shared sender tasks and connection count. Disconnected clients repair from the durable log."
+      - alert: WorkspaceDiagnosticsStale
+        expr: workspace_projection_snapshot_age_seconds > 30 or absent(workspace_projection_snapshot_age_seconds) or (workspace_projection_snapshot_age_seconds != workspace_projection_snapshot_age_seconds)
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Projection metrics are unavailable or stale"
+          description: "NaN means no successful snapshot yet. Old values remain cached after a failed poll. Check projection_poll and target health."

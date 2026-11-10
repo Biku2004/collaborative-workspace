@@ -43,6 +43,7 @@ public class SecurityConfiguration {
     SecurityFilterChain developmentSecurity(HttpSecurity http) throws Exception {
         return http.authorizeHttpRequests(auth -> auth
                     .requestMatchers(HttpMethod.GET, "/api/status", "/api/csrf").permitAll()
+                    .requestMatchers("/actuator", "/actuator/**").hasRole("BOOTSTRAP")
                     .requestMatchers("/api/dev/users", "/api/dev/users/**").hasRole("BOOTSTRAP")
                     .requestMatchers("/api/workspaces", "/api/workspaces/**").hasRole("USER")
                     .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
@@ -56,8 +57,10 @@ public class SecurityConfiguration {
                 .exceptionHandling(errors -> errors.defaultAuthenticationEntryPointFor(
                     (request, response, exception) -> ApiSecurityErrors.write(response, 401),
                     PathPatternRequestMatcher.withDefaults().matcher("/api/**"))
+                    .defaultAuthenticationEntryPointFor((request, response, exception) -> ApiSecurityErrors.write(response, 401),
+                        PathPatternRequestMatcher.withDefaults().matcher("/actuator/**"))
                     .accessDeniedHandler((request, response, exception) -> {
-                        if (request.getServletPath().startsWith("/api/")) ApiSecurityErrors.write(response, 403);
+                        if (request.getServletPath().startsWith("/api/") || request.getServletPath().startsWith("/actuator/")) ApiSecurityErrors.write(response, 403);
                         else new org.springframework.security.web.access.AccessDeniedHandlerImpl().handle(request, response, exception);
                     }))
                 .build();

@@ -20,6 +20,16 @@ import org.springframework.web.socket.WebSocketSession;
 import tools.jackson.databind.json.JsonMapper;
 
 class RoomAuthorizationTest {
+    @Test void roleDowngradeCannotBeUndoneByLaterPermissionRestoration() {
+        var hub = new DocumentRoomHub(mock(DocumentRepository.class), mock(WorkspaceRepository.class), JsonMapper.builder().build());
+        try {
+            var peer = hub.add(socket(UUID.randomUUID(), UUID.randomUUID()));
+            assertTrue(peer.roleCurrent(WorkspaceRole.EDITOR));
+            assertFalse(peer.roleCurrent(WorkspaceRole.VIEWER));
+            assertFalse(peer.roleCurrent(WorkspaceRole.EDITOR));
+            assertFalse(peer.sessionValid());
+        } finally { hub.shutdown(); }
+    }
     private WebSocketSession socket(UUID workspace, UUID user) {
         var socket = mock(WebSocketSession.class);
         when(socket.getId()).thenReturn(UUID.randomUUID().toString()); when(socket.isOpen()).thenReturn(true);

@@ -50,7 +50,7 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 - [x] **Lesson 32 — Active-session access revocation.** See [Lesson 32](lessons/32-active-session-revocation.md). Commit/logout ordering, after-commit workspace invalidation, bounded authorization freshness and retained-draft behavior are verified.
 - [x] **Lesson 33 — Search authorized committed content.** See [Lesson 33](lessons/33-authorized-content-search.md). Scheduled indexing, authorized search/rebuild, freshness, result opening and failure isolation are verified.
 - [x] **Lesson 34 — Monitoring and debugging.** See [Lesson 34](lessons/34-monitoring-and-debugging.md). Correlated edit traces, redacted logs, protected metrics, lag snapshots and proposed alerts are verified.
-- [ ] **Lesson 35 — Multi-instance communication.**
+- [x] **Lesson 35 — Multi-instance communication.** See [Lesson 35](lessons/35-multi-instance-collaboration.md). Two backend instances exchange signed Redis hints and presence; browser tests verify missed-message repair, duplicate safety, saved edits during broker outages and lost-hint permission enforcement.
 - [ ] **Lesson 36 — Overload and recovery experiments.**
 - [ ] **Lesson 37 — Backup, restore and local deployment.**
 

@@ -14,8 +14,8 @@ import org.springframework.stereotype.Component;
 /** Allowlisted diagnostics only: never accepts content, URLs, credentials or exception messages. */
 @Component
 public class WorkspaceTelemetry {
-    public enum Stage { ACCEPT, VALIDATE, COMMIT, RELAY, SOCKET_SEND, SYNC, ENGINE, SEARCH_INDEX, DELIVERY_POLL, SEARCH_POLL, PROJECTION_POLL }
-    public enum Signal { CONNECTION_REJECTED, QUEUE_OVERFLOW, EXECUTOR_REJECTED, PRESENCE_DROPPED, SOCKET_DENIED, SOCKET_FAILED, SOCKET_CLOSED }
+    public enum Stage { ACCEPT, VALIDATE, COMMIT, RELAY, SOCKET_SEND, SYNC, ENGINE, SEARCH_INDEX, DELIVERY_POLL, SEARCH_POLL, PROJECTION_POLL, CLUSTER_PUBLISH, CLUSTER_RECEIVE }
+    public enum Signal { CONNECTION_REJECTED, QUEUE_OVERFLOW, EXECUTOR_REJECTED, PRESENCE_DROPPED, SOCKET_DENIED, SOCKET_FAILED, SOCKET_CLOSED, CLUSTER_UNAVAILABLE, CLUSTER_INVALID, CLUSTER_DROPPED }
     private static final java.util.Set<String> SAFE_CODES = java.util.Set.of("INVALID_UPDATE", "ACCESS_DENIED", "NOT_FOUND", "SCHEMA_UNSUPPORTED", "RETRY_HEAD_CHANGED", "EPOCH_CHANGED", "DOCUMENT_ARCHIVED", "UPDATE_ID_CONFLICT");
     private static final WorkspaceTelemetry DISABLED = new WorkspaceTelemetry(null);
     private final MeterRegistry registry;

@@ -11,6 +11,7 @@ backend/src/main/java/com/example/collaborativeworkspace/
 │   └── history/                            Checkpoints, named revisions and epoch restore
 ├── collaboration/
 │   ├── engine/                             Private Yjs client, schema contract and materialization
+│   ├── cluster/                             Redis notifications, remote presence and subscription recovery
 │   ├── updates/                            Durable update acceptance, stream state and update log
 │   └── transport/                          WebSockets, rooms, presence, relay and session registry
 ├── search/                                 Search projection, query API and indexing jobs
@@ -55,3 +56,5 @@ Existing historical lesson snippets may show the original flat Java package. The
 Lesson 33 search is verified as a local learning milestone; its implementation and configuration are described in the [search lesson](lessons/33-authorized-content-search.md).
 
 Lesson 34 diagnostics live in `observability`; proposed monitoring rules live in `ops/observability`. See [monitoring and debugging](lessons/34-monitoring-and-debugging.md).
+
+Lesson 35 inter-instance transport lives in `collaboration/cluster`; local Redis setup lives in `ops/redis`. See [two backend instances](lessons/35-multi-instance-collaboration.md).

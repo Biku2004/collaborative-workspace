@@ -40,7 +40,8 @@ public class SecurityConfiguration {
 
     @Bean
     @Profile("dev")
-    SecurityFilterChain developmentSecurity(HttpSecurity http) throws Exception {
+    SecurityFilterChain developmentSecurity(HttpSecurity http,
+            @Value("${server.servlet.session.cookie.name:JSESSIONID}") String sessionCookieName) throws Exception {
         return http.authorizeHttpRequests(auth -> auth
                     .requestMatchers(HttpMethod.GET, "/api/status", "/api/csrf").permitAll()
                     .requestMatchers("/actuator", "/actuator/**").hasRole("BOOTSTRAP")
@@ -52,7 +53,7 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionFixation(fixation -> fixation.changeSessionId()))
                 .logout(logout -> logout.invalidateHttpSession(true)
                         .clearAuthentication(true)
-                        .deleteCookies("JSESSIONID")
+                        .deleteCookies(sessionCookieName)
                         .logoutSuccessUrl("/login?logout"))
                 .exceptionHandling(errors -> errors.defaultAuthenticationEntryPointFor(
                     (request, response, exception) -> ApiSecurityErrors.write(response, 401),

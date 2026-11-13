@@ -24,6 +24,9 @@ import org.springframework.web.socket.WebSocketSession;
 @Component
 @Profile("dev")
 public class DocumentRoomHub {
+    private org.springframework.context.ApplicationEventPublisher events;
+    @org.springframework.beans.factory.annotation.Autowired
+    void clusterEvents(org.springframework.context.ApplicationEventPublisher events) { this.events = events; }
     private WorkspaceTelemetry telemetry = WorkspaceTelemetry.disabled();
     @org.springframework.beans.factory.annotation.Autowired
     void observe(WorkspaceTelemetry telemetry) {
@@ -67,6 +70,7 @@ public class DocumentRoomHub {
         volatile boolean presenceEnabled;
         volatile boolean hasPresence;
         volatile boolean revoked;
+        private com.example.collaborativeworkspace.workspaces.WorkspaceRole observedRole;
         final long connectedAt = nanoClock.getAsLong();
         private long presenceWindowNanos;
         private int presenceCount;
@@ -87,7 +91,15 @@ public class DocumentRoomHub {
         }
         boolean workspaceAllowed() {
             long started = nanoClock.getAsLong();
-            return sessionValid() && workspaces.memberRole(workspace, user).isPresent() && current(started);
+            if (!sessionValid()) return false;
+            var role = workspaces.memberRole(workspace, user);
+            return role.isPresent() && current(started) && roleCurrent(role.get());
+        }
+        synchronized boolean roleCurrent(com.example.collaborativeworkspace.workspaces.WorkspaceRole role) {
+            if (observedRole != null && ((observedRole == com.example.collaborativeworkspace.workspaces.WorkspaceRole.OWNER && role != observedRole) ||
+                    (observedRole == com.example.collaborativeworkspace.workspaces.WorkspaceRole.EDITOR && role == com.example.collaborativeworkspace.workspaces.WorkspaceRole.VIEWER))) revoked = true;
+            observedRole = role;
+            return !revoked;
         }
         boolean current(long started) {
             long elapsed = nanoClock.getAsLong() - started;
@@ -124,7 +136,7 @@ public class DocumentRoomHub {
     }
     Peer get(WebSocketSession socket) { return peers.get(socket.getId()); }
     /** Mark every affected peer before attempting any potentially slow transport close. */
-    void invalidate(UUID workspace, UUID user) {
+    public void invalidate(UUID workspace, UUID user) {
         var affected = peers.values().stream().filter(peer -> workspace.equals(peer.workspace) && user.equals(peer.user)).toList();
         for (Peer peer : affected) peer.revoked = true;
         for (Peer peer : affected) {
@@ -149,6 +161,14 @@ public class DocumentRoomHub {
             if (target != sender && target.roomReady && target.presenceEnabled && sender.workspace.equals(target.workspace) && document.equals(target.document))
                 target.sender.sendEphemeral(value, () -> document.equals(target.document) && target.allowed(document));
         }
+        if (events != null) events.publishEvent(new com.example.collaborativeworkspace.collaboration.cluster.LocalPresence(sender.workspace, document, sender.user, sender.presenceId, value));
+    }
+    /** Remote frames have been authenticated/validated by the bridge; targets still recheck DB access at send time. */
+    public void remotePresence(UUID workspace, UUID document, String value) {
+        for (Peer target : peers.values()) {
+            if (target.roomReady && target.presenceEnabled && workspace.equals(target.workspace) && document.equals(target.document))
+                target.sender.sendEphemeral(value, () -> document.equals(target.document) && target.allowed(document));
+        }
     }
     void broadcast(Peer sender, UUID document, String json) {
         for (Peer target : peers.values()) {
@@ -161,7 +181,7 @@ public class DocumentRoomHub {
     void broadcastCommitted(UUID workspace, UUID document, String json) {
         broadcastCommitted(workspace, document, json, null);
     }
-    void broadcastCommitted(UUID workspace, UUID document, String json, UUID correlationId) {
+    public void broadcastCommitted(UUID workspace, UUID document, String json, UUID correlationId) {
         for (Peer target : peers.values()) {
             if (target.roomReady && workspace.equals(target.workspace) && document.equals(target.document))
                 target.sender.send(json, () -> document.equals(target.document) && target.allowed(document), correlationId);
@@ -178,7 +198,7 @@ public class DocumentRoomHub {
                 }
                 long started = nanoClock.getAsLong();
                 var snapshot = updates.findAccessible(peer.workspace, document, peer.user);
-                if (snapshot.isEmpty() || !peer.current(started)) { peer.sender.close(CloseStatus.POLICY_VIOLATION); continue; }
+                if (snapshot.isEmpty() || !peer.current(started) || !peer.roleCurrent(snapshot.get().role())) { peer.sender.close(CloseStatus.POLICY_VIOLATION); continue; }
                 var head = snapshot.get();
                 String value = json.writeValueAsString(java.util.Map.of("type", "HEAD", "version", 1, "documentId", document,
                         "epoch", head.epoch(), "sequence", head.sequence()));

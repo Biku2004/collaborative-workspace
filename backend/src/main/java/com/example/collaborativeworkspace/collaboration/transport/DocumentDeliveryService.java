@@ -23,6 +23,9 @@ import tools.jackson.databind.json.JsonMapper;
 @Service
 @Profile("dev")
 public class DocumentDeliveryService {
+    private com.example.collaborativeworkspace.collaboration.cluster.ClusterPublisher cluster;
+    @org.springframework.beans.factory.annotation.Autowired
+    void cluster(org.springframework.beans.factory.ObjectProvider<com.example.collaborativeworkspace.collaboration.cluster.ClusterPublisher> publisher) { cluster = publisher.getIfAvailable(); }
     private WorkspaceTelemetry telemetry = WorkspaceTelemetry.disabled();
     @org.springframework.beans.factory.annotation.Autowired
     void observe(WorkspaceTelemetry telemetry) { this.telemetry = telemetry; }
@@ -86,6 +89,7 @@ public class DocumentDeliveryService {
                         "epoch", update.epoch(), "sequence", update.sequence(), "updateId", update.updateId(), "userId", update.actor(),
                         "payload", Base64.getEncoder().encodeToString(update.payload())));
                 rooms.broadcastCommitted(event.workspaceId(), update.documentId(), message, event.correlationId());
+                if (cluster != null) cluster.update(event.eventId());
                 updates.markRelayAttempted(event.eventId());
                 return null;
             });

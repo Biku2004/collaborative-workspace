@@ -74,6 +74,14 @@ public class DocumentUpdateRepository {
                 (rs, row) -> new PendingEvent(rs.getObject("event_id", UUID.class), rs.getObject("workspace_id", UUID.class), mapUpdate(rs), rs.getObject("correlation_id", UUID.class)), limit);
     }
 
+    /** Resolve only stored updates in the current document epoch. */
+    public Optional<PendingEvent> committedEvent(UUID event) {
+        return jdbc.query("SELECT o.event_id,o.correlation_id,d.workspace_id,u.document_id,u.epoch,u.sequence,u.update_id,u.actor_id,u.payload " +
+                "FROM document_update_outbox o JOIN document_updates u ON u.document_id=o.document_id AND u.epoch=o.epoch AND u.sequence=o.sequence " +
+                "JOIN document_streams s ON s.document_id=u.document_id AND s.epoch=u.epoch JOIN documents d ON d.id=u.document_id WHERE o.event_id=?",
+                (rs, row) -> new PendingEvent(rs.getObject("event_id", UUID.class), rs.getObject("workspace_id", UUID.class), mapUpdate(rs), rs.getObject("correlation_id", UUID.class)), event).stream().findFirst();
+    }
+
     // The column records an attempted enqueue, not confirmed client receipt.
     public void markRelayAttempted(UUID eventId) {
         if (jdbc.update("UPDATE document_update_outbox SET published_at=CURRENT_TIMESTAMP WHERE event_id=? AND published_at IS NULL", eventId) != 1)

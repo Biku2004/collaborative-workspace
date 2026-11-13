@@ -217,7 +217,9 @@ Implementation, metric meanings, debugging steps and limits: [Lesson 34](lessons
 - **Verify:** Trace a test edit without logging its content or credentials; record metrics and proposed alert conditions.
 - **Interview practice:** How would you distinguish database latency from peer delivery latency?
 
-### Lesson 35 — Run two backend instances
+### Lesson 35 — Run two backend instances (complete locally)
+
+Implementation, local setup, failure verification and limits: [Lesson 35](lessons/35-multi-instance-collaboration.md).
 
 - **Build:** Add Redis Pub/Sub for low-latency inter-instance notification and ephemeral presence, using an existing local service if available or Docker if needed. Keep PostgreSQL authoritative.
 - **Learn:** At-most-once delivery, outbox retries and reconciliation.
@@ -244,4 +246,4 @@ Comments, mentions, exports, object storage, Kafka and explicit room ownership a
 
 ## Next lesson
 
-Continue with **Lesson 35: run two backend instances**. Monitoring and debugging are described in [Lesson 34](lessons/34-monitoring-and-debugging.md).
+Continue with **Lesson 36: overload and recovery experiments**. The two-instance bridge and failure verification are described in [Lesson 35](lessons/35-multi-instance-collaboration.md).

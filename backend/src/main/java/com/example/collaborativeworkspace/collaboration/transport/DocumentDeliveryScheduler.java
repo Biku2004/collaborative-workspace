@@ -29,7 +29,10 @@ public class DocumentDeliveryScheduler {
     }
     @Scheduled(fixedDelayString = "${workspace.delivery.poll-ms:1000}")
     public void poll() {
-        try { telemetry.measure(DELIVERY_POLL, () -> { if (relayEnabled) delivery.relayPending(); rooms.notifyHeads(updates, json); return null; }); }
+        try { telemetry.measure(DELIVERY_POLL, () -> { if (relayEnabled) delivery.relayPending(); return null; }); }
         catch (RuntimeException ex) { org.slf4j.LoggerFactory.getLogger(getClass()).warn("Delivery poll failed: {}", ex.getClass().getName()); }
+        // Redis/relay failure must not suppress the durable-head repair or authorization sweep.
+        try { rooms.notifyHeads(updates, json); }
+        catch (RuntimeException ex) { org.slf4j.LoggerFactory.getLogger(getClass()).warn("Head sweep failed: {}", ex.getClass().getName()); }
     }
 }

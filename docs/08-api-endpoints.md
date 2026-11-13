@@ -2,6 +2,8 @@
 
 This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 
+JSON request bodies use exact field types and names. Unknown or duplicate fields, boolean/numeric text values, quoted numeric versions, numeric enum ordinals and fractional integer fields return 400 before mutation. Roles use their string names, such as `OWNER`, `EDITOR` and `VIEWER`. Query parameters keep their documented string-to-number conversion rules.
+
 | Method | Path | Purpose | Access in `dev` | Request and success response |
 |---|---|---|---|---|
 | GET | `/actuator/health` | Basic backend health | BOOTSTRAP session only | Status without component details; unavailable outside dev. |
@@ -48,6 +50,8 @@ All API errors use `{ "code": "...", "message": "..." }` with `Cache-Control: no
 The WebSocket greeting and session cleanup are explained in [Lesson 19](lessons/19-authenticate-websocket.md).
 
 The room protocol and its bounds are explained in [Lesson 20](lessons/20-document-rooms-and-bounded-messaging.md).
+
+WebSocket admission is bounded by 256 connections per process and eight per stored-user ID across sessions and workspaces. Excess connections close with 1013. An initial `HELLO` must arrive within ten seconds of connection creation; incoming traffic and normal room maintenance reject expired ungreeted peers with 1008. This limit counts tabs/devices for one account, not the number of distinct collaborators in a document. Correctly greeted idle peers retain the existing behavior. Maintenance can be delayed by scheduling or database availability; the deadline is not a real-time service guarantee.
 
 The versioned update/acknowledgement contract is described in [Lesson 21](lessons/21-commit-before-acknowledgement.md).
 

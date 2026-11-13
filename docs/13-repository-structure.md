@@ -16,7 +16,7 @@ backend/src/main/java/com/example/collaborativeworkspace/
 ├── search/                                 Search projection, query API and indexing jobs
 ├── observability/                          Correlated diagnostics, HTTP logging and cached lag metrics
 └── common/
-    ├── api/                                Shared API errors and status endpoint
+    ├── api/                                Shared API errors, strict JSON input policy and status endpoint
     ├── crypto/                             Shared content checksum primitive
     ├── idempotency/                        Idempotent request handling
     └── pagination/                         Shared bounded-page support

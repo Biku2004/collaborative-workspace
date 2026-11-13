@@ -1,5 +1,35 @@
 import { expect, test } from '@playwright/test';
 
+test('document-end navigation updates the model while native selectionchange is delayed', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(async () => {
+    const host = document.createElement('div'); host.id = 'navigation-boundary'; document.body.append(host);
+    const path = '/test/rich-presence-harness.tsx';
+    const harness = await import(/* @vite-ignore */ path) as typeof import('./rich-presence-harness'); harness.mount(host);
+  });
+  const editor = page.getByRole('textbox', { name: 'Document text' });
+  await editor.fill('Hello'); await editor.press('Control+A');
+  await page.evaluate(() => {
+    const stop = (event: Event) => event.stopImmediatePropagation();
+    document.addEventListener('selectionchange', stop, true);
+    (window as unknown as { resumeSelection: () => void }).resumeSelection = () => {
+      document.removeEventListener('selectionchange', stop, true);
+      document.dispatchEvent(new Event('selectionchange'));
+    };
+  });
+  try {
+    await editor.press('Control+End');
+    const selection = await editor.evaluate(element => {
+      // Test-only inspection: ensure navigation does not depend on a delayed DOM event.
+      const instance = (element as unknown as { editor: { state: { selection: { from: number; to: number } } } }).editor;
+      return { from: instance.state.selection.from, to: instance.state.selection.to };
+    });
+    expect(selection).toEqual({ from: 6, to: 6 });
+    await editor.pressSequentially('!');
+    await expect(editor).toHaveText('Hello!');
+  } finally { await page.evaluate(() => (window as unknown as { resumeSelection: () => void }).resumeSelection()); }
+});
+
 test('presence arriving between native selection movement and selectionchange preserves text', async ({ page }) => {
   await page.goto('/');
   await page.evaluate(async () => {

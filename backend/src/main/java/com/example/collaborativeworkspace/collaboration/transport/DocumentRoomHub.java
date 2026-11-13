@@ -35,6 +35,8 @@ public class DocumentRoomHub {
         telemetry.gauge("socket.queued.bytes", this, hub -> hub.peers.values().stream().mapToInt(peer -> peer.sender.queuedBytes()).sum());
     }
     static final int MAX_CONNECTIONS = 256;
+    static final int MAX_CONNECTIONS_PER_USER = 8;
+    static final long MAX_GREETING_NANOS = TimeUnit.SECONDS.toNanos(10);
     static final long MAX_AUTH_CHECK_NANOS = TimeUnit.SECONDS.toNanos(5);
     private final ConcurrentHashMap<String, Peer> peers = new ConcurrentHashMap<>();
     private final AtomicInteger count = new AtomicInteger();
@@ -65,6 +67,7 @@ public class DocumentRoomHub {
         volatile boolean presenceEnabled;
         volatile boolean hasPresence;
         volatile boolean revoked;
+        final long connectedAt = nanoClock.getAsLong();
         private long presenceWindowNanos;
         private int presenceCount;
         Peer(WebSocketSession socket) {
@@ -78,6 +81,9 @@ public class DocumentRoomHub {
         boolean sessionValid() {
             try { http.getCreationTime(); return !revoked && socket.isOpen(); }
             catch (IllegalStateException ex) { return false; }
+        }
+        boolean greetingExpired() {
+            return !welcomed && nanoClock.getAsLong() - connectedAt >= MAX_GREETING_NANOS;
         }
         boolean workspaceAllowed() {
             long started = nanoClock.getAsLong();
@@ -104,10 +110,16 @@ public class DocumentRoomHub {
         }
     }
 
-    Peer add(WebSocketSession socket) {
-        if (count.incrementAndGet() > MAX_CONNECTIONS) { count.decrementAndGet(); telemetry.signal(WorkspaceTelemetry.Signal.CONNECTION_REJECTED); return null; }
+    synchronized Peer add(WebSocketSession socket) {
         Peer peer = new Peer(socket);
-        if (peers.putIfAbsent(socket.getId(), peer) != null) { count.decrementAndGet(); return null; }
+        // Serialize admissions across sessions/workspaces so one account cannot reserve the global pool.
+        if (peers.containsKey(socket.getId()) || count.get() >= MAX_CONNECTIONS ||
+                peers.values().stream().filter(existing -> existing.user.equals(peer.user)).count() >= MAX_CONNECTIONS_PER_USER) {
+            telemetry.signal(WorkspaceTelemetry.Signal.CONNECTION_REJECTED);
+            return null;
+        }
+        count.incrementAndGet();
+        peers.put(socket.getId(), peer);
         return peer;
     }
     Peer get(WebSocketSession socket) { return peers.get(socket.getId()); }
@@ -159,7 +171,7 @@ public class DocumentRoomHub {
         for (Peer peer : peers.values()) {
             UUID document = peer.document;
             try {
-                if (!peer.sessionValid()) { peer.sender.close(CloseStatus.POLICY_VIOLATION); continue; }
+                if (!peer.sessionValid() || peer.greetingExpired()) { peer.sender.close(CloseStatus.POLICY_VIOLATION); continue; }
                 if (document == null || !peer.roomReady) {
                     if (!peer.workspaceAllowed()) peer.sender.close(CloseStatus.POLICY_VIOLATION);
                     continue;

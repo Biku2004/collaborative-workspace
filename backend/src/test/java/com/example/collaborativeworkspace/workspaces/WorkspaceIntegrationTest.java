@@ -87,7 +87,9 @@ class WorkspaceIntegrationTest {
             assertEquals(400, post(aliceClient, base + "/api/workspaces", "{\"name\":\"bad\\u0000name\"}", aliceToken).statusCode());
             String aliceName = "Alice workspace " + aliceId;
             String bobName = "Bob workspace " + bobId;
-            var aliceWorkspace = post(aliceClient, base + "/api/workspaces", "{\"name\":\"" + aliceName + "\",\"createdBy\":\"" + bobId + "\"}", aliceToken);
+            assertEquals(400, post(aliceClient, base + "/api/workspaces", "{\"name\":\"" + aliceName + "\",\"createdBy\":\"" + bobId + "\"}", aliceToken).statusCode());
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM workspaces WHERE name=?", Integer.class, aliceName));
+            var aliceWorkspace = post(aliceClient, base + "/api/workspaces", "{\"name\":\"" + aliceName + "\"}", aliceToken);
             assertEquals(201, aliceWorkspace.statusCode());
             assertTrue(aliceWorkspace.body().contains("\"role\":\"OWNER\""));
             assertEquals(201, post(bobClient, base + "/api/workspaces", "{\"name\":\"" + bobName + "\"}", bobToken).statusCode());

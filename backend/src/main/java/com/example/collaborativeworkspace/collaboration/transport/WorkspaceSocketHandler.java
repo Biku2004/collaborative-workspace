@@ -40,7 +40,7 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
 
     @Override protected void handleTextMessage(WebSocketSession socket, TextMessage message) throws Exception {
         var peer = rooms.get(socket);
-        if (peer == null || message.getPayloadLength() > 16384) {
+        if (peer == null || peer.greetingExpired() || message.getPayloadLength() > 16384) {
             socket.close(CloseStatus.POLICY_VIOLATION); return;
         }
         try {

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Extension } from '@tiptap/core';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import Collaboration from '@tiptap/extension-collaboration';
 import StarterKit, { type StarterKitOptions } from '@tiptap/starter-kit';
@@ -9,11 +10,22 @@ import type { DocumentProvider } from '../provider';
 
 type Props = { document: Y.Doc; readOnly: boolean; provider?: Pick<DocumentProvider, 'getPresence' | 'observePresence' | 'setPresence'> };
 const attributes = (readOnly: boolean) => ({ role: 'textbox', 'aria-label': 'Document text', 'aria-multiline': 'true', 'aria-readonly': String(readOnly) });
+// Keep document navigation in the model as well as the DOM. A delayed native
+// selectionchange must not leave Select All active when the next character arrives.
+const documentNavigation = Extension.create({
+  name: 'workspaceDocumentNavigation',
+  addKeyboardShortcuts() {
+    return {
+      'Mod-Home': () => this.editor.commands.focus('start'),
+      'Mod-End': () => this.editor.commands.focus('end'),
+    };
+  },
+});
 
 /** The caller must supply a synchronized, initialized document of the negotiated schema. */
 export default function RichTextSurface({ document, readOnly, provider }: Props) {
   const editor = useEditor({
-    extensions: [StarterKit.configure(contract.starterKit as Partial<StarterKitOptions>),
+    extensions: [StarterKit.configure(contract.starterKit as Partial<StarterKitOptions>), documentNavigation,
       Collaboration.configure({ document, field: contract.root }), ...(provider ? [richPresence(provider)] : [])],
     editable: !readOnly,
     editorProps: { attributes: attributes(readOnly) },

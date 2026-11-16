@@ -31,6 +31,7 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
     }
 
     @Override public void afterConnectionEstablished(WebSocketSession socket) throws Exception {
+        SocketTransportLimits.configure(socket);
         socket.setTextMessageSizeLimit(16384);
         socket.setBinaryMessageSizeLimit(1024);
         var http = (jakarta.servlet.http.HttpSession) socket.getAttributes().get("httpSession");
@@ -67,17 +68,13 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
                     peer.sender.send(json.writeValueAsString(Map.of("type", "REJECTED", "version", 1, "code", "SCHEMA_UNSUPPORTED")), peer::workspaceAllowed);
                     return;
                 }
-                peer.document = document;
-                peer.presenceEnabled = root.size() == 5;
+                if (!rooms.join(peer, document, root.size() == 5)) { peer.sender.close(CloseStatus.SERVICE_OVERLOAD); return; }
                 peer.sender.send(json.writeValueAsString(Map.of("type", "JOINED", "version", 1, "documentId", document, "format", format.get())), () -> document.equals(peer.document) && peer.allowed(document));
                 peer.roomReady = true;
             } else if (type.equals("LEAVE") && root.size() == 2 && peer.document != null) {
                 java.util.UUID document = peer.document;
                 if (!peer.allowed(document)) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
-                rooms.clearPresence(peer);
-                peer.roomReady = false;
-                peer.document = null;
-                peer.presenceEnabled = false;
+                rooms.leave(peer);
                 peer.sender.send(json.writeValueAsString(Map.of("type", "LEFT", "version", 1, "documentId", document)), peer::workspaceAllowed);
             } else if (type.equals("SYNC") && root.size() == 4 && peer.document != null && root.path("epoch").isIntegralNumber()
                     && root.path("epoch").canConvertToLong() && root.path("epoch").longValue() >= 0 && root.path("after").isIntegralNumber()

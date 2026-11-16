@@ -226,7 +226,9 @@ Implementation, local setup, failure verification and limits: [Lesson 35](lesson
 - **Verify:** Users connected to different instances converge; intentionally dropping a notification is repaired from the durable log; duplicate delivery is safe.
 - **Interview practice:** Why is Redis Pub/Sub alone not a durable edit log?
 
-### Lesson 36 — Test overload and recovery
+### Lesson 36 — Test overload and recovery (complete locally)
+
+Implementation, measured workload, recovery experiments and limits: [Lesson 36](lessons/36-overload-and-recovery.md).
 
 - **Build:** Bound per-session and room queues and define overload/reconnect behavior; add focused load and failure experiments.
 - **Learn:** Backpressure, slow consumers, hot rooms and failure budgets.
@@ -246,4 +248,4 @@ Comments, mentions, exports, object storage, Kafka and explicit room ownership a
 
 ## Next lesson
 
-Continue with **Lesson 36: overload and recovery experiments**. The two-instance bridge and failure verification are described in [Lesson 35](lessons/35-multi-instance-collaboration.md).
+Continue with **Lesson 37: backup, restore and local deployment**. Overload/recovery evidence and limitations are described in [Lesson 36](lessons/36-overload-and-recovery.md).

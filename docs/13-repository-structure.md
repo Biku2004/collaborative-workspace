@@ -58,3 +58,5 @@ Lesson 33 search is verified as a local learning milestone; its implementation a
 Lesson 34 diagnostics live in `observability`; proposed monitoring rules live in `ops/observability`. See [monitoring and debugging](lessons/34-monitoring-and-debugging.md).
 
 Lesson 35 inter-instance transport lives in `collaboration/cluster`; local Redis setup lives in `ops/redis`. See [two backend instances](lessons/35-multi-instance-collaboration.md).
+
+Lesson 36 queue scheduling and native transport limits live in `collaboration/transport`. The overload browser fixture and paced workload are test-only; measurements are recorded in `ops/load`. See [overload and recovery](lessons/36-overload-and-recovery.md).

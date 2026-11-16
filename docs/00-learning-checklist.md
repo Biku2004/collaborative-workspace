@@ -51,7 +51,7 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 - [x] **Lesson 33 — Search authorized committed content.** See [Lesson 33](lessons/33-authorized-content-search.md). Scheduled indexing, authorized search/rebuild, freshness, result opening and failure isolation are verified.
 - [x] **Lesson 34 — Monitoring and debugging.** See [Lesson 34](lessons/34-monitoring-and-debugging.md). Correlated edit traces, redacted logs, protected metrics, lag snapshots and proposed alerts are verified.
 - [x] **Lesson 35 — Multi-instance communication.** See [Lesson 35](lessons/35-multi-instance-collaboration.md). Two backend instances exchange signed Redis hints and presence; browser tests verify missed-message repair, duplicate safety, saved edits during broker outages and lost-hint permission enforcement.
-- [ ] **Lesson 36 — Overload and recovery experiments.**
+- [x] **Lesson 36 — Overload and recovery experiments.** See [Lesson 36](lessons/36-overload-and-recovery.md). Atomic room caps, native transport deadlines and fair sender scheduling are checked alongside actual-browser overload recovery and a measured 16-peer workload.
 - [ ] **Lesson 37 — Backup, restore and local deployment.**
 
 The [full roadmap](03-implementation-roadmap.md) gives the dependencies, acceptance tests and later scaling milestones. We will check whether each new service is already available and use Docker for missing services as needed. We will not use Docker for your regular local PostgreSQL development database.

@@ -13,6 +13,7 @@ import org.springframework.web.socket.WebSocketSession;
 /** A single ordered sender per socket. Limits include queued messages, plus at most one in-flight message. */
 final class BoundedSocketSender {
     static final int MAX_MESSAGES = 16, MAX_BYTES = 16384;
+    static final int MAX_DRAIN_BATCH = 4;
     private record Pending(TextMessage message, BooleanSupplier allowed, boolean ephemeral, java.util.UUID correlationId) {}
     private final WorkspaceTelemetry telemetry;
     private final WebSocketSession socket;
@@ -78,7 +79,7 @@ final class BoundedSocketSender {
 
     private void drain() {
         try {
-            while (true) {
+            for (int sent = 0; sent < MAX_DRAIN_BATCH; sent++) {
                 Pending item;
                 synchronized (this) {
                     if (closed) return;
@@ -89,6 +90,21 @@ final class BoundedSocketSender {
                 if (item.correlationId() == null) sendItem(item);
                 else telemetry.measure(WorkspaceTelemetry.Stage.SOCKET_SEND, item.correlationId(), () -> { sendItem(item); return null; });
             }
+            // Yield to waiting sockets instead of letting a continuously busy room hold every worker.
+            boolean fail = false;
+            synchronized (this) {
+                if (closed) return;
+                if (queue.isEmpty()) { running = false; return; }
+                try { executor.execute(this::drain); }
+                catch (RejectedExecutionException ex) {
+                    telemetry.signal(WorkspaceTelemetry.Signal.EXECUTOR_REJECTED);
+                    if (queue.stream().allMatch(Pending::ephemeral)) {
+                        queue.forEach(item -> telemetry.signal(WorkspaceTelemetry.Signal.PRESENCE_DROPPED));
+                        queue.clear(); bytes = 0; running = false;
+                    } else fail = true;
+                }
+            }
+            if (fail) close(CloseStatus.SESSION_NOT_RELIABLE);
         } catch (com.example.collaborativeworkspace.collaboration.updates.DocumentUpdateException denied) { close(CloseStatus.POLICY_VIOLATION); }
         catch (Exception ex) { telemetry.signal(WorkspaceTelemetry.Signal.SOCKET_FAILED); close(CloseStatus.SERVER_ERROR); }
     }

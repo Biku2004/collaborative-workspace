@@ -39,6 +39,7 @@ public class DocumentRoomHub {
     }
     static final int MAX_CONNECTIONS = 256;
     static final int MAX_CONNECTIONS_PER_USER = 8;
+    static final int MAX_ROOM_CONNECTIONS = 32;
     static final long MAX_GREETING_NANOS = TimeUnit.SECONDS.toNanos(10);
     static final long MAX_AUTH_CHECK_NANOS = TimeUnit.SECONDS.toNanos(5);
     private final ConcurrentHashMap<String, Peer> peers = new ConcurrentHashMap<>();
@@ -135,6 +136,32 @@ public class DocumentRoomHub {
         return peer;
     }
     Peer get(WebSocketSession socket) { return peers.get(socket.getId()); }
+    /** Count reservations as well as ready peers; no room owns another unbounded message queue. */
+    synchronized boolean join(Peer peer, UUID document, boolean presence) {
+        if (peers.get(peer.socket.getId()) != peer || peer.document != null || !peer.sessionValid()) return false;
+        long occupied = peers.values().stream().filter(existing -> peer.workspace.equals(existing.workspace) && document.equals(existing.document)).count();
+        if (occupied >= MAX_ROOM_CONNECTIONS) {
+            telemetry.signal(WorkspaceTelemetry.Signal.ROOM_REJECTED);
+            return false;
+        }
+        peer.document = document;
+        peer.presenceEnabled = presence;
+        return true;
+    }
+    /** Release atomically before any transport/event work, including when remove races a JOIN. */
+    void leave(Peer peer) {
+        UUID document;
+        boolean announce;
+        synchronized (this) {
+            document = peer.document;
+            announce = document != null && peer.roomReady && peer.hasPresence;
+            peer.hasPresence = false;
+            peer.roomReady = false;
+            peer.document = null;
+            peer.presenceEnabled = false;
+        }
+        if (announce) announcePresenceLeft(peer, document);
+    }
     /** Mark every affected peer before attempting any potentially slow transport close. */
     public void invalidate(UUID workspace, UUID user) {
         var affected = peers.values().stream().filter(peer -> workspace.equals(peer.workspace) && user.equals(peer.user)).toList();
@@ -145,13 +172,14 @@ public class DocumentRoomHub {
         }
     }
     void remove(WebSocketSession socket) {
-        Peer peer = peers.remove(socket.getId());
-        if (peer != null) { count.decrementAndGet(); clearPresence(peer); peer.sender.close(CloseStatus.NORMAL); }
+        Peer peer;
+        synchronized (this) {
+            peer = peers.remove(socket.getId());
+            if (peer != null) count.decrementAndGet();
+        }
+        if (peer != null) { leave(peer); peer.sender.close(CloseStatus.NORMAL); }
     }
-    void clearPresence(Peer peer) {
-        UUID document = peer.document;
-        if (document == null || !peer.roomReady || !peer.hasPresence) return;
-        peer.hasPresence = false;
+    private void announcePresenceLeft(Peer peer, UUID document) {
         String value = json.writeValueAsString(java.util.Map.of("type", "PRESENCE_LEFT", "version", 1,
                 "documentId", document, "presenceId", peer.presenceId));
         broadcastPresence(peer, document, value);

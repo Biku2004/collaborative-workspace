@@ -1,0 +1,48 @@
+{
+  "recordedOn": "2026-11-16",
+  "environment": "One local Windows backend with native PostgreSQL, private Yjs engine and real WebSocket clients; Docker stopped",
+  "workload": "12 paced commits with repeated valid CRDT bytes under distinct IDs; 16 hot-room peers plus one cold-room peer",
+  "sampleCount": 12,
+  "percentileMethod": "nearest rank; p95 equals max for 12 samples",
+  "hotRoom": {
+    "sampledPeakSenderTasks": 12,
+    "allHotPeersMs": {
+      "p50": 219.769,
+      "max": 284.4104,
+      "p95": 284.4104
+    },
+    "hotPeers": 16,
+    "acceptanceMs": {
+      "p50": 156.3004,
+      "max": 200.6333,
+      "p95": 200.6333
+    },
+    "sampledPeakQueuedBytes": 3012,
+    "coldPeers": 1,
+    "sampledPeakQueuedMessages": 12,
+    "commits": 12,
+    "coldSyncMs": {
+      "p50": 3.1371,
+      "max": 12.6819,
+      "p95": 12.6819
+    }
+  },
+  "overloadRecovery": {
+    "peakWaitingMessages": 16,
+    "peakWaitingBytes": 3804,
+    "closeCode": 4500,
+    "configuredNativeSessions": 3
+  },
+  "limits": "Sampled waiting UTF-8 bytes are not heap or process-memory bounds. Injected write stall proves overflow recovery, not all native network timeout behavior.",
+  "verification": {
+    "maven": {
+      "tests": 168,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "command": "mvn -B '-Dtest=!MultiInstanceIntegrationTest' test",
+    "excluded": "Redis-dependent MultiInstanceIntegrationTest; Docker kept stopped",
+    "frontendBuild": "passed"
+  }
+}

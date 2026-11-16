@@ -54,6 +54,8 @@ This checkpoint allows at most 256 tracked sockets per application instance. Eac
 
 A blocked socket send can occupy one sender worker; the design bounds queue memory but does not guarantee a hard send deadline or fairness if all four workers are blocked. Closing a socket may also take time depending on the underlying transport. The tests simulate a blocked sender with a mock; they are not a network load test. Production work needs realistic slow-reader tests, timeouts, rate limits, monitoring and capacity design.
 
+Lesson 36 later adds native write/close deadlines, four-message worker turns and a 32-peer document-room cap, with measured workload and real-browser recovery evidence. See [overload and recovery](36-overload-and-recovery.md) for the current behavior and remaining limits.
+
 ## 6. Try it in two browser tabs
 
 Start the `dev` backend and sign in as a stored user following [Lesson 12](12-create-workspaces.md). Create a workspace and a document as an owner or editor using [Lesson 14](14-workspace-document-creation.md). Open two browser tabs from the configured allowed Origin, each with a member session. The default is `http://127.0.0.1:8080`; use that origin consistently.

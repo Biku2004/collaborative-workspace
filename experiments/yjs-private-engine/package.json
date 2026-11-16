@@ -12,10 +12,10 @@
     "test": "npm run build && node --test dist/test/*.test.js"
   },
   "dependencies": {
-    "@tiptap/core": "3.32.2",
-    "@tiptap/pm": "3.32.2",
-    "@tiptap/starter-kit": "3.32.2",
-    "@tiptap/y-tiptap": "3.0.12",
+    "@tiptap/core": "3.32.3",
+    "@tiptap/pm": "3.32.3",
+    "@tiptap/starter-kit": "3.32.3",
+    "@tiptap/y-tiptap": "3.1.0",
     "@workspace/rich-text-schema-v1": "file:../../packages/rich-text-schema-v1",
     "lib0": "0.2.119",
     "y-protocols": "1.0.7",

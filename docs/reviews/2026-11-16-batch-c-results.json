@@ -1,0 +1,32 @@
+{
+  "recordedOn": "2026-11-16",
+  "batch": "C",
+  "tiptap": "3.32.3",
+  "bindingPackage": "@tiptap/y-tiptap@3.1.0",
+  "bindingContract": "TIPTAP_NO_MIGRATIONS_V1",
+  "yjs": "13.6.33",
+  "engineTests": { "tests": 32, "passed": 32, "failed": 0, "skipped": 0 },
+  "javaRegression": { "tests": 168, "failures": 0, "errors": 0, "skipped": 0 },
+  "canonicalBrowserScenarios": 25,
+  "offlineBrowserScenarios": 3,
+  "structuralWorkload": {
+    "attempted": 500, "accepted": 500, "rejection": null,
+    "checkpointBytes": 31059, "records": 0, "transfers": 0, "expanded": 0, "pending": 0,
+    "independentBrowserLoadedAndEditedCommittedResult": true
+  },
+  "browserGroupTransientEngineUnavailable": 1,
+  "transientNote": "The complete browser group recovered and passed; the sustained structural case itself recorded no rejection. Keep this transient observation for combined-load analysis in D.",
+  "compatibility": [
+    "legacy rich fixture remains readable with heading, bold and italic intact",
+    "new editor removes legacy migration records and produces none on subsequent structural edits",
+    "commit allows content-preserving legacy cleanup and duplicate cleanup",
+    "commit rejects additions and replacements, including fresh well-shaped metadata",
+    "legacy rich clients receive CLIENT_UPGRADE_REQUIRED before joining",
+    "provider validates the server binding echo",
+    "plain text, offline reconnect, named revisions and epoch restore remain covered"
+  ],
+  "formatConverted": false,
+  "defaultLocalRichGate": false,
+  "remainingReleaseDependencies": ["D combined workload and reproducible release matrix", "E supported LAN deployment"],
+  "securityClaim": "Removes reliance on legacy position-migration records and prohibits introducing them in accepted updates; does not claim a proven historical exploit or exhaustive security certification."
+}

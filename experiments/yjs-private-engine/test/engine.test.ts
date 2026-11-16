@@ -98,7 +98,7 @@ test('private version 2 validates a bounded rich-text candidate and rejects unsu
   } finally { doc.destroy(); }
 });
 
-test('version 2 commit mode protects prior position history at the HTTP boundary', async () => {
+test('version 2 HTTP commits retire legacy metadata and reject new records', async () => {
   const fixture = readFileSync(new URL('../../fixtures/rich-heading.properties', import.meta.url), 'utf8');
   const doc = new Y.Doc();
   try {
@@ -115,9 +115,13 @@ test('version 2 commit mode protects prior position history at the HTTP boundary
     await withServer(async legacyUrl => {
       const url = legacyUrl.replace('/v1/', '/v2/');
       const result = await post(url, { version: 2, format: 'RICH_TEXT_V1', mode: 'commit', updates: [b64(checkpoint), b64(deletion)] });
-      assert.equal(result.status, 422);
-      assert.equal(result.body.code, 'UNSUPPORTED_DOCUMENT');
-      assert.equal(result.body.checkpoint, undefined);
+      assert.equal(result.status, 200);
+      const client = doc.clientID, clock = Y.getState(doc.store, client);
+      metadata.set(`${client}:${clock}`, { version: 1, client, clock, seen: [], transfers: [] });
+      const rejected = await post(url, { version: 2, format: 'RICH_TEXT_V1', mode: 'commit', updates: [b64(checkpoint), b64(Y.encodeStateAsUpdate(doc, vector))] });
+      assert.equal(rejected.status, 422);
+      assert.equal(rejected.body.code, 'UNSUPPORTED_DOCUMENT');
+      assert.equal(rejected.body.checkpoint, undefined);
     });
   } finally { doc.destroy(); }
 });

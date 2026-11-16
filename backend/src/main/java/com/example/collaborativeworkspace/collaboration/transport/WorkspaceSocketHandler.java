@@ -1,6 +1,7 @@
 package com.example.collaborativeworkspace.collaboration.transport;
 
 import com.example.collaborativeworkspace.collaboration.engine.CollaborationFormatPolicy;
+import com.example.collaborativeworkspace.collaboration.engine.RichTextContract;
 import com.example.collaborativeworkspace.collaboration.engine.YjsEngineException;
 import com.example.collaborativeworkspace.collaboration.updates.DocumentUpdateException;
 import com.example.collaborativeworkspace.collaboration.updates.DocumentUpdateService;
@@ -55,21 +56,27 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
                 if (!type.equals("HELLO") || root.size() != 2 || !peer.workspaceAllowed()) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
                 peer.welcomed = true;
                 peer.sender.send(json.writeValueAsString(Map.of("type", "WELCOME", "version", 1, "workspaceId", peer.workspace, "userId", peer.user)), peer::workspaceAllowed);
-            } else if (type.equals("JOIN") && (root.size() == 3 || (root.size() == 4 && root.path("format").isTextual())
-                    || (root.size() == 5 && root.path("format").isTextual() && root.path("presence").isBoolean() && root.path("presence").booleanValue()))
-                    && root.path("documentId").isTextual() && peer.document == null) {
+            } else if (type.equals("JOIN") && validJoin(root) && peer.document == null) {
                 java.util.UUID document;
                 try { document = java.util.UUID.fromString(root.path("documentId").asText()); }
                 catch (IllegalArgumentException ex) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
                 var format = peer.readableFormat(document);
                 if (format.isEmpty()) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
-                String requested = root.size() == 3 ? "PLAIN_TEXT_V1" : root.path("format").asText();
+                String requested = root.has("format") ? root.path("format").asText() : "PLAIN_TEXT_V1";
                 if (!formats.supports(format.get()) || !format.get().equals(requested)) {
                     peer.sender.send(json.writeValueAsString(Map.of("type", "REJECTED", "version", 1, "code", "SCHEMA_UNSUPPORTED")), peer::workspaceAllowed);
                     return;
                 }
-                if (!rooms.join(peer, document, root.size() == 5)) { peer.sender.close(CloseStatus.SERVICE_OVERLOAD); return; }
-                peer.sender.send(json.writeValueAsString(Map.of("type", "JOINED", "version", 1, "documentId", document, "format", format.get())), () -> document.equals(peer.document) && peer.allowed(document));
+                boolean rich = "RICH_TEXT_V1".equals(requested);
+                if (rich && !RichTextContract.BINDING.equals(root.path("binding").asText())) {
+                    peer.sender.send(json.writeValueAsString(Map.of("type", "REJECTED", "version", 1, "code", "CLIENT_UPGRADE_REQUIRED")), peer::workspaceAllowed);
+                    return;
+                }
+                if (!rich && root.has("binding")) { peer.sender.close(CloseStatus.POLICY_VIOLATION); return; }
+                if (!rooms.join(peer, document, root.path("presence").asBoolean(false))) { peer.sender.close(CloseStatus.SERVICE_OVERLOAD); return; }
+                Map<String, Object> joined = new java.util.HashMap<>(Map.of("type", "JOINED", "version", 1, "documentId", document, "format", format.get()));
+                if (rich) joined.put("binding", RichTextContract.BINDING);
+                peer.sender.send(json.writeValueAsString(joined), () -> document.equals(peer.document) && peer.allowed(document));
                 peer.roomReady = true;
             } else if (type.equals("LEAVE") && root.size() == 2 && peer.document != null) {
                 java.util.UUID document = peer.document;
@@ -136,6 +143,15 @@ public class WorkspaceSocketHandler extends AbstractWebSocketHandler {
                         "documentId", document, "userId", peer.user, "message", body)));
             } else { peer.sender.close(CloseStatus.POLICY_VIOLATION); }
         } catch (tools.jackson.core.JacksonException ex) { socket.close(CloseStatus.BAD_DATA); return; }
+    }
+
+    private static boolean validJoin(tools.jackson.databind.JsonNode root) {
+        if (!root.path("documentId").isTextual()) return false;
+        int fields = 3;
+        if (root.has("format")) { if (!root.path("format").isTextual()) return false; fields++; }
+        if (root.has("presence")) { if (!root.path("presence").isBoolean() || !root.path("presence").booleanValue() || !root.has("format")) return false; fields++; }
+        if (root.has("binding")) { if (!root.path("binding").isTextual() || !root.has("format")) return false; fields++; }
+        return root.size() == fields;
     }
 
     private static boolean validPosition(String value) {

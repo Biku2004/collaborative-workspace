@@ -5,8 +5,9 @@ import java.util.Base64;
 import org.springframework.core.io.ClassPathResource;
 import tools.jackson.databind.json.JsonMapper;
 
-/** Versioned bootstrap data only; no application path creates rich documents yet. */
+/** Shared format/bootstrap and minimum rich-client binding contract. */
 public final class RichTextContract {
+    public static final String BINDING = "TIPTAP_NO_MIGRATIONS_V1";
     private static final int MAX_CONTRACT_BYTES = 65536, MAX_UPDATE_BYTES = 8192;
     private final byte[] initialUpdate;
 
@@ -16,6 +17,7 @@ public final class RichTextContract {
             if (bytes.length > MAX_CONTRACT_BYTES) throw new IllegalStateException("Rich-text contract exceeds its size limit");
             var contract = json.readTree(bytes);
             if (contract == null || !contract.isObject() || !"RICH_TEXT_V1".equals(contract.path("format").asText()) ||
+                    !BINDING.equals(contract.path("binding").asText()) ||
                     !"body".equals(contract.path("root").asText()) || !contract.path("initialUpdate").isTextual())
                 throw new IllegalStateException("Invalid rich-text contract");
             String encoded = contract.path("initialUpdate").asText();

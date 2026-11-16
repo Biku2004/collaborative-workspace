@@ -5,7 +5,7 @@ import contract from '@workspace/rich-text-schema-v1/contract.json' with { type:
 import * as Y from 'yjs';
 import * as decoding from 'lib0/decoding';
 import { InputError, LIMITS } from './protocol.js';
-import { requirePositionMetadataPreserved, snapshotPositionMetadata, validatePositionMetadata } from './positionMetadata.js';
+import { requirePositionMetadataRetired, snapshotPositionMetadata, validatePositionMetadata } from './positionMetadata.js';
 
 // Versioned rich-text candidates are validated before a document update is committed.
 const schema = getSchema([StarterKit.configure(contract.starterKit as Partial<StarterKitOptions>)]);
@@ -40,7 +40,7 @@ export function reconstructRichCandidate(updates: readonly Uint8Array[], commit 
     const metadataKey = `__tiptap_position_migrations:root:${contract.root}`;
     if ([...doc.share.keys()].some(key => key !== contract.root && key !== metadataKey)) throw new InputError('UNSUPPORTED_DOCUMENT');
     validatePositionMetadata(doc, contract.root);
-    if (previousMetadata) requirePositionMetadataPreserved(previousMetadata, snapshotPositionMetadata(doc, contract.root));
+    if (previousMetadata) requirePositionMetadataRetired(previousMetadata, snapshotPositionMetadata(doc, contract.root));
     const root = doc.getXmlFragment(contract.root);
     if (root._map.size !== 0) throw new InputError('UNSUPPORTED_DOCUMENT');
     let count = 0, textUnits = 0;

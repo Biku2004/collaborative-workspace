@@ -59,13 +59,13 @@ test('shared dependent update requires and extends the canonical bootstrap', () 
   ] }] });
 });
 
-test('real editor heading updates preserve bounded position metadata across checkpoints', () => {
+test('legacy editor heading history remains readable without accepting new metadata commits', () => {
   const fixture = readFileSync(new URL('../../fixtures/rich-heading.properties', import.meta.url), 'utf8');
   let checkpoint = Buffer.from(contract.initialUpdate, 'base64') as Uint8Array;
   for (let i = 1; i <= 4; i++) {
     const encoded = new RegExp(`^update${i}=(.+)$`, 'm').exec(fixture)?.[1]?.trim();
     assert.ok(encoded);
-    checkpoint = reconstructRichCandidate([checkpoint, Buffer.from(encoded, 'base64')], true).checkpoint;
+    checkpoint = reconstructRichCandidate([checkpoint, Buffer.from(encoded, 'base64')]).checkpoint;
   }
   const result = reconstructRichCandidate([checkpoint]);
   // ProseMirror attribute objects can have a null prototype; compare their wire JSON.
@@ -74,7 +74,7 @@ test('real editor heading updates preserve bounded position metadata across chec
   ] }] });
 });
 
-test('commit validation rejects deletion or replacement of existing position history', () => {
+test('commit validation allows legacy cleanup and rejects metadata replacement or addition', () => {
   const fixture = readFileSync(new URL('../../fixtures/rich-heading.properties', import.meta.url), 'utf8');
   const original = new Y.Doc();
   try {
@@ -86,19 +86,38 @@ test('commit validation rejects deletion or replacement of existing position his
     const checkpoint = Y.encodeStateAsUpdate(original);
     const key = `__tiptap_position_migrations:root:${contract.root}`;
     assert.ok(original.getMap(key).size > 0);
-    for (const operation of ['delete', 'replace'] as const) {
+    for (const operation of ['delete', 'replace', 'add'] as const) {
       const attacker = new Y.Doc();
       try {
         Y.applyUpdate(attacker, checkpoint);
         const vector = Y.encodeStateVector(attacker), metadata = attacker.getMap(key);
         const entry = [...metadata.entries()][0]!;
         if (operation === 'delete') metadata.delete(entry[0]);
-        else metadata.set(entry[0], { ...(entry[1] as object), seen: [] });
+        else if (operation === 'replace') metadata.set(entry[0], { ...(entry[1] as object), seen: [] });
+        else {
+          const client = attacker.clientID, clock = Y.getState(attacker.store, client);
+          metadata.set(`${client}:${clock}`, { version: 1, client, clock, seen: [], transfers: [] });
+        }
         const update = Y.encodeStateAsUpdate(attacker, vector);
-        assert.throws(() => reconstructRichCandidate([checkpoint, update], true), /UNSUPPORTED_DOCUMENT/);
+        if (operation === 'delete') {
+          const result = reconstructRichCandidate([checkpoint, update], true);
+          assert.deepEqual(result.json, reconstructRichCandidate([checkpoint]).json);
+          assert.deepEqual(reconstructRichCandidate([result.checkpoint, update], true).json, result.json);
+        } else assert.throws(() => reconstructRichCandidate([checkpoint, update], true), /UNSUPPORTED_DOCUMENT/);
       } finally { attacker.destroy(); }
     }
   } finally { original.destroy(); }
+});
+
+test('even well-shaped metadata cannot be introduced into a fresh document', () => {
+  const doc = prosemirrorJSONToYDoc(schema, example, contract.root);
+  try {
+    const baseline = Y.encodeStateAsUpdate(doc), vector = Y.encodeStateVector(doc);
+    const client = doc.clientID, clock = Y.getState(doc.store, client);
+    doc.getMap(`__tiptap_position_migrations:root:${contract.root}`).set(`${client}:${clock}`, { version: 1, client, clock, seen: [], transfers: [] });
+    assert.equal(reconstructRichCandidate([Y.encodeStateAsUpdate(doc)]).initialized, true);
+    assert.throws(() => reconstructRichCandidate([baseline, Y.encodeStateAsUpdate(doc, vector)], true), /UNSUPPORTED_DOCUMENT/);
+  } finally { doc.destroy(); }
 });
 
 test('malformed or excessive position metadata is rejected before clients consume it', () => {
@@ -122,7 +141,7 @@ test('malformed or excessive position metadata is rejected before clients consum
   } finally { for (const doc of [tooLong, malformed, unknown, missingId]) doc.destroy(); }
 });
 
-test('position history accepts 128 bounded records and rejects the next record as a limit', () => {
+test('bounded legacy history can be retired before accepting further content edits', () => {
   const doc = prosemirrorJSONToYDoc(schema, example, contract.root);
   try {
     const metadata = doc.getMap(`__tiptap_position_migrations:root:${contract.root}`);
@@ -136,6 +155,20 @@ test('position history accepts 128 bounded records and rejects the next record a
     append();
     assert.throws(() => reconstructRichCandidate([baseline, Y.encodeStateAsUpdate(doc, vector)], true), /TOO_LARGE/);
     assert.equal(reconstructRichCandidate([baseline]).initialized, true);
+    const cleanup = new Y.Doc();
+    try {
+      Y.applyUpdate(cleanup, baseline);
+      const before = Y.encodeStateVector(cleanup);
+      cleanup.getMap(`__tiptap_position_migrations:root:${contract.root}`).clear();
+      const retired = reconstructRichCandidate([baseline, Y.encodeStateAsUpdate(cleanup, before)], true);
+      assert.ok(retired.checkpoint.length < baseline.length);
+      assert.deepEqual(retired.json, reconstructRichCandidate([baseline]).json);
+      const next = Y.encodeStateVector(cleanup);
+      const heading = cleanup.getXmlFragment(contract.root).get(0) as Y.XmlElement;
+      (heading.get(0) as Y.XmlText).insert(5, '!');
+      const edited = reconstructRichCandidate([retired.checkpoint, Y.encodeStateAsUpdate(cleanup, next)], true);
+      assert.equal(schema.nodeFromJSON(edited.json).textContent, 'Title!Body');
+    } finally { cleanup.destroy(); }
   } finally { doc.destroy(); }
 });
 

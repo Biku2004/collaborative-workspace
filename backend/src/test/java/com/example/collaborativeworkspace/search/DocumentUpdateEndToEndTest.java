@@ -671,6 +671,8 @@ class DocumentUpdateEndToEndTest {
             socket.sendText("{\"type\":\"JOIN\",\"version\":1,\"documentId\":\"" + document + "\"}", true).join();
             assertTrue(listener.next("REJECTED").contains("SCHEMA_UNSUPPORTED"));
             socket.sendText("{\"type\":\"JOIN\",\"version\":1,\"documentId\":\"" + document + "\",\"format\":\"RICH_TEXT_V1\"}", true).join();
+            assertTrue(listener.next("REJECTED").contains("CLIENT_UPGRADE_REQUIRED"));
+            socket.sendText("{\"type\":\"JOIN\",\"version\":1,\"documentId\":\"" + document + "\",\"format\":\"RICH_TEXT_V1\",\"binding\":\"TIPTAP_NO_MIGRATIONS_V1\"}", true).join();
             assertTrue(listener.next("JOINED").contains("RICH_TEXT_V1"));
             socket.sendText("{\"type\":\"SYNC\",\"version\":1,\"epoch\":0,\"after\":0}", true).join();
             var initial = json.readTree(listener.next("SYNC_PAGE"));
@@ -700,7 +702,7 @@ class DocumentUpdateEndToEndTest {
             viewerSocket = viewerClient.newWebSocketBuilder().header("Origin", "http://127.0.0.1:5173")
                     .buildAsync(URI.create("ws://127.0.0.1:" + port + "/api/workspaces/" + workspace + "/socket"), viewerListener).join();
             viewerSocket.sendText("{\"type\":\"HELLO\",\"version\":1}", true).join(); viewerListener.next("WELCOME");
-            viewerSocket.sendText("{\"type\":\"JOIN\",\"version\":1,\"documentId\":\"" + document + "\",\"format\":\"RICH_TEXT_V1\"}", true).join(); viewerListener.next("JOINED");
+            viewerSocket.sendText("{\"type\":\"JOIN\",\"version\":1,\"documentId\":\"" + document + "\",\"format\":\"RICH_TEXT_V1\",\"binding\":\"TIPTAP_NO_MIGRATIONS_V1\"}", true).join(); viewerListener.next("JOINED");
             viewerSocket.sendText(request.replace(updateId.toString(), UUID.randomUUID().toString()), true).join();
             assertTrue(viewerListener.next("REJECTED").contains("ACCESS_DENIED"));
             assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM document_updates WHERE document_id=?", Integer.class, document));

@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import richContract from '@workspace/rich-text-schema-v1/contract.json';
 import { LocalDocumentStore } from '../offline/localDocumentStore';
 import { ApiError, currentUser, documentBaseline } from '../../lib/api';
 import { verifiedState } from '../../shared/yjs/verifiedState';
@@ -251,9 +252,11 @@ export class DocumentProvider {
       if (event.type === 'WELCOME') {
         if (this.phase !== 'connecting' || event.workspaceId !== this.workspaceId) throw new Error('Unexpected workspace');
         if (event.userId !== this.userId) { this.fail('The active account changed. Copy your local draft before leaving.'); return; }
-        this.send({ type: 'JOIN', version: 1, documentId: this.documentId, format: this.format, presence: true });
+        this.send({ type: 'JOIN', version: 1, documentId: this.documentId, format: this.format, presence: true,
+          ...(this.format === 'RICH_TEXT_V1' ? { binding: richContract.binding } : {}) });
       } else if (event.type === 'JOINED') {
         if (this.phase !== 'connecting' || event.documentId !== this.documentId || event.format !== this.format) throw new Error('Unexpected document or format');
+        if (this.format === 'RICH_TEXT_V1' && event.binding !== richContract.binding) throw new Error('Unsupported rich-text binding');
         clearTimeout(this.connectionTimer);
         this.requestSync();
       } else if (event.type === 'HEAD') {
@@ -297,6 +300,7 @@ export class DocumentProvider {
             if (!this.disposed && baseline.format === this.format && integer(baseline.epoch) > this.epoch) { this.nextEpoch = baseline.epoch; this.emit(); }
           }).catch(() => {});
         }
+        else if (event.code === 'CLIENT_UPGRADE_REQUIRED') this.fail('Reload the application to update the rich-text editor. Your local draft remains on this device; copy it before leaving.');
         else if (event.code === 'SCHEMA_UNSUPPORTED') this.fail('The document format is unsupported. Your local draft remains on this device; copy it before leaving.');
         else if (event.code === 'ACCESS_DENIED' || event.code === 'NOT_FOUND' || event.code === 'DOCUMENT_ARCHIVED')
           this.fail('The server rejected access or the document is unavailable. Your local draft remains on this device.');

@@ -1,5 +1,6 @@
 {
   "format": "RICH_TEXT_V1",
+  "binding": "TIPTAP_NO_MIGRATIONS_V1",
   "root": "body",
   "initialUpdate": "AQGAgIDoBAAHAQRib2R5AwlwYXJhZ3JhcGgA",
   "initialClientId": 1291845632,

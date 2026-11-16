@@ -1,8 +1,8 @@
 import * as Y from 'yjs';
 import { InputError } from './protocol.js';
 
-// TipTap's pinned Yjs binding stores structural position migrations in this map.
-// Bound both the records and expanded transfer ranges before clients consume them.
+// Legacy TipTap records remain readable under finite bounds. The current binding
+// ignores and deletes them; new commits may retire records, never add/replace them.
 const MAX_RECORDS = 128, MAX_SEEN = 32, MAX_TRANSFERS = 1024, MAX_EXPANDED = 16384;
 const MAX_CLIENT_ID = 0xffffffff;
 
@@ -75,7 +75,7 @@ export function validatePositionMetadata(doc: Y.Doc, rootName: string): void {
   }
 }
 
-/** Existing migration records are append-only in the pinned TipTap binding. */
+/** Snapshot legacy records before validating a new commit. */
 export function snapshotPositionMetadata(doc: Y.Doc, rootName: string): Map<string, string> {
   validatePositionMetadata(doc, rootName);
   const key = `__tiptap_position_migrations:root:${rootName}`;
@@ -83,8 +83,8 @@ export function snapshotPositionMetadata(doc: Y.Doc, rootName: string): Map<stri
   return new Map([...doc.getMap(key)].map(([name, value]) => [name, JSON.stringify(value)!]));
 }
 
-export function requirePositionMetadataPreserved(previous: Map<string, string>, current: Map<string, string>): void {
-  for (const [key, value] of previous) {
-    if (current.get(key) !== value) throw new InputError('UNSUPPORTED_DOCUMENT');
+export function requirePositionMetadataRetired(previous: Map<string, string>, current: Map<string, string>): void {
+  for (const [key, value] of current) {
+    if (previous.get(key) !== value) throw new InputError('UNSUPPORTED_DOCUMENT');
   }
 }

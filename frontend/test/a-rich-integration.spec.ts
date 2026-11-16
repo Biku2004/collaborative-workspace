@@ -204,7 +204,9 @@ test('rich editors synchronize, recover offline edits, and enforce viewer writes
 
 test('measures repeated structural edits and restores the larger checkpoint', async ({ browser, baseURL }, testInfo) => {
   test.skip(process.env.WORKSPACE_E2E_EDITING !== 'true', 'Requires the real local Yjs engine');
-  test.setTimeout(120000);
+  test.setTimeout(300000);
+  const editCount = Number(process.env.WORKSPACE_E2E_STRUCTURAL_EDITS ?? 80);
+  if (!Number.isInteger(editCount) || editCount < 80 || editCount > 500) throw new Error('Structural workload must be between 80 and 500 edits');
   const context = await browser.newContext({ baseURL });
   try {
     await context.addInitScript(() => {
@@ -240,7 +242,7 @@ test('measures repeated structural edits and restores the larger checkpoint', as
     await expect.poll(() => page.evaluate(() => (window as unknown as Window & { editReplies: () => unknown[] }).editReplies().length), { timeout: 15000 }).toBeGreaterThan(0);
     await expect(page.locator('.editor-status')).toHaveText(/Saved|Up to date/, { timeout: 15000 });
     let accepted = 0, rejection: string | undefined;
-    for (let attempt = 0; attempt < 80; attempt++) {
+    for (let attempt = 0; attempt < editCount; attempt++) {
       const before = await page.evaluate(() => (window as unknown as Window & { editReplies: () => unknown[] }).editReplies().length);
       await page.getByRole('button', { name: 'Heading 2', exact: true }).click();
       await expect.poll(() => page.evaluate(() => (window as unknown as Window & { editReplies: () => unknown[] }).editReplies().length), { timeout: 15000 }).toBeGreaterThan(before);
@@ -262,9 +264,11 @@ test('measures repeated structural edits and restores the larger checkpoint', as
     const measurement = JSON.stringify({ attempted: accepted + (rejection ? 1 : 0), accepted, rejection: rejection ?? null, ...local });
     await testInfo.attach('structural-edit-measurement', { body: measurement, contentType: 'application/json' });
     console.log(`STRUCTURAL_EDIT_MEASUREMENT ${measurement}`);
-    expect(accepted).toBe(80);
+    expect(accepted).toBe(editCount);
     expect(rejection).toBeUndefined();
     expect(local.pending).toBe(0);
+    expect(local.records).toBe(0);
+    expect(local.checkpointBytes).toBeLessThan(65536);
     const observer = await browser.newContext({ baseURL });
     try {
       const other = await observer.newPage();

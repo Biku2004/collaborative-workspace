@@ -1,5 +1,7 @@
 # Lesson 27 — Rich-text compatibility design
 
+**Historical lesson snapshot:** the position-migration design and measurements below describe the pre-Batch-C binding. The current [rich-text release contract](../rich-text-release.md) replaces that design with TipTap 3.32.3 / y-tiptap 3.1.0, no new migration records, legacy cleanup and minimum binding negotiation. See the [product completion tracker](../product-completion-plan.md) for current acceptance and deployment status. The historical exploit-impact uncertainty below is retained; it is not a claim of a proven vulnerability.
+
 Status: **learning milestone complete**. The roadmap's editor, schema compatibility and browser verification are implemented locally. Rich-text creation and collaboration still require `workspace.rich.enabled=true`; the gate is disabled by default. Completion of this lesson does not resolve the security and operational issues below or establish production readiness.
 
 ## Roadmap acceptance audit

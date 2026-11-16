@@ -150,8 +150,10 @@ class BrowserWorkspaceIntegrationTest {
             Path chrome = Path.of("C:/Program Files/Google/Chrome/Application/chrome.exe");
             if (Files.isRegularFile(chrome)) env.putIfAbsent("PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH", chrome.toString());
             browser = runner.start();
-            assertTrue(browser.waitFor(360, TimeUnit.SECONDS), "Browser verification timed out");
+            int timeoutSeconds = "500".equals(System.getenv("WORKSPACE_E2E_STRUCTURAL_EDITS")) ? 600 : 360;
+            assertTrue(browser.waitFor(timeoutSeconds, TimeUnit.SECONDS), "Browser verification timed out");
             assertEquals(0, browser.exitValue(), () -> "Browser verification failed:\n" + safeRead(browserLog));
+            safeRead(browserLog).lines().filter(line -> line.contains(" passed")).forEach(line -> System.out.println("BROWSER_SCENARIOS " + line));
             safeRead(browserLog).lines().filter(line -> line.startsWith("STRUCTURAL_EDIT_MEASUREMENT ")).forEach(System.out::println);
             // Offline-shell scenarios depend on the full dev group having created its rich fixture.
             // A deliberately filtered run verifies only its selected scenarios.
@@ -176,6 +178,7 @@ class BrowserWorkspaceIntegrationTest {
                 browser = runner.start();
                 assertTrue(browser.waitFor(60, TimeUnit.SECONDS), "Offline browser verification timed out");
                 assertEquals(0, browser.exitValue(), () -> "Offline browser verification failed:\n" + safeRead(browserLog));
+                safeRead(browserLog).lines().filter(line -> line.contains(" passed")).forEach(line -> System.out.println("OFFLINE_SCENARIOS " + line));
             }
         } finally {
             stopProcess(browser);

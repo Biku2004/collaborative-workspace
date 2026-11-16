@@ -1,4 +1,26 @@
 import { expect, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+test('legacy rich history is retired while supported text and formatting stay readable', async ({ page }) => {
+  const fixture = readFileSync('../experiments/yjs-private-engine/fixtures/rich-heading.properties', 'utf8');
+  const updates = [1,2,3,4].map(index => new RegExp(`^update${index}=(.+)$`, 'm').exec(fixture)![1]!.trim());
+  await page.goto('/');
+  await page.evaluate(async updates => {
+    const path = '/test/rich-surface-harness.tsx';
+    const harness = await import(/* @vite-ignore */ path) as typeof import('./rich-surface-harness');
+    const host = document.createElement('div'); document.body.append(host);
+    const mounted = harness.mountLegacySurfaceHarness(host, updates);
+    (window as unknown as { legacyRecords: () => number }).legacyRecords = mounted.recordCount;
+  }, updates);
+  const editor = page.getByRole('textbox', { name: 'Document text' });
+  await expect(editor.locator('h2 strong em, h2 em strong')).toHaveText('Hello');
+  await expect.poll(() => page.evaluate(() => (window as unknown as { legacyRecords: () => number }).legacyRecords())).toBe(0);
+  await editor.press('Control+End'); await editor.pressSequentially('!');
+  await expect(editor).toHaveText('Hello!');
+  await page.getByRole('button', { name: 'Heading 2', exact: true }).click();
+  await expect(editor.locator('p')).toHaveText('Hello!');
+  expect(await page.evaluate(() => (window as unknown as { legacyRecords: () => number }).legacyRecords())).toBe(0);
+});
 
 test('document-end navigation updates the model while native selectionchange is delayed', async ({ page }) => {
   await page.goto('/');

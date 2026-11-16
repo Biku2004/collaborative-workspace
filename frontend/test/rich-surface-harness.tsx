@@ -21,3 +21,14 @@ export function mountRichSurfaceHarness(element: HTMLElement) {
   const root = createRoot(element); root.render(<StrictMode><Harness /></StrictMode>);
   return () => { root.unmount(); left.destroy(); right.destroy(); };
 }
+
+/** Load a pre-upgrade fixture without rewriting its XML content or client IDs. */
+export function mountLegacySurfaceHarness(element: HTMLElement, updates: string[]) {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, Uint8Array.from(atob(contract.initialUpdate), char => char.charCodeAt(0)));
+  for (const update of updates) Y.applyUpdate(doc, Uint8Array.from(atob(update), char => char.charCodeAt(0)));
+  const metadata = doc.getMap('__tiptap_position_migrations:root:body');
+  if (metadata.size === 0) throw new Error('Expected pre-upgrade migration records');
+  const root = createRoot(element); root.render(<RichTextSurface document={doc} readOnly={false} />);
+  return { recordCount: () => metadata.size, dispose: () => { root.unmount(); doc.destroy(); } };
+}

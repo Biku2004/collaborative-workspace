@@ -6,7 +6,7 @@ The 37 local lessons are complete. Product completion follows the batches in [th
 |---|---|---|
 | A | Supported default document creation and explicit format capabilities | Complete locally; verified 2026-11-16 |
 | B | Workspace creation, member management, document rename/archive UI | Complete locally; verified 2026-11-16 |
-| C | Resolve and verify rich-text/history release gate, or explicit user-approved first-release scope | Required: user confirmed rich text must be included (2026-11-16) |
+| C | Resolve and verify rich-text/history release gate, or explicit user-approved first-release scope | Rich binding/history implementation verified locally; combined workload and deployed release remain D/E |
 | D | Reproducible combined workload and release test matrix | Pending; retain the observed contention failure |
 | E | Deployment/authentication/session/monitoring/backup operation for the chosen audience | Target confirmed: shared team/LAN deployment (2026-11-16) |
 
@@ -55,3 +55,13 @@ The React checklist review covered labelled forms, narrow feature modules, abort
 ## Deployment clarification
 
 The user delegated backup setup after explaining that the LAN choice meant multi-user sharing. The initial target stays one host on a shared home/office network, with browser clients. Batch E should install automatic encrypted local backups outside the checkout and verify recovery. No separate backup machine/share has been supplied: do not claim host-loss protection or verified off-machine storage until an independent destination exists.
+
+## Batch C verification — 2026-11-16
+
+The [release contract](rich-text-release.md) replaces dependence on persistent position migrations with the upstream removal in y-tiptap 3.1.0, pinned with TipTap 3.32.3. Java requires the current rich binding at JOIN; the provider validates its echo. Engine commit validation allows unchanged legacy records or cleanup, and rejects additions/replacements independently of the claimed client binding. Existing schema/format identity and draft namespaces remain.
+
+The canonical 168 Java tests passed with no failures/errors/skips, including 25 development browser scenarios and three production offline scenarios. The structural case accepted 500 of 500 committed heading toggles with zero pending operations and zero migration records; its checkpoint was 31,059 bytes. A new independent browser loaded that committed result and edited it. The old 80-edit Batch B measurement was 58,185 bytes with 80 migration records; the workloads differ and neither establishes unlimited history.
+
+The actual pre-upgrade fixture opens in the new editor with its heading, bold and italic text intact; its migration records are retired. Existing offline, permission, named revision and restore/old-draft quarantine cases pass. The source and HTTP engine tests include rejection of fresh well-shaped metadata and content-preserving cleanup at the legacy record bound. Read-only reconstruction remains separate from accepting a commit.
+
+The default local launcher's rich gate remains off while Batch D establishes combined-load evidence and Batch E supplies the supported LAN configuration. This is a feature-contract/compatibility checkpoint, not an Internet deployment or exhaustive security certification.

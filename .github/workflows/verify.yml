@@ -1,0 +1,54 @@
+name: Build and unit checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      WORKSPACE_RUN_DB_TESTS: 'false'
+      WORKSPACE_RUN_YJS_ENGINE_TESTS: 'false'
+      WORKSPACE_RUN_BROWSER_TESTS: 'false'
+      WORKSPACE_RUN_CLUSTER_TESTS: 'false'
+      WORKSPACE_RUN_LOAD_TESTS: 'false'
+      WORKSPACE_RUN_OVERLOAD_TESTS: 'false'
+      WORKSPACE_RUN_SEARCH_BROWSER_TESTS: 'false'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.17.0
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            experiments/yjs-private-engine/package-lock.json
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '24'
+          cache: maven
+      - name: Validate private engine
+        working-directory: experiments/yjs-private-engine
+        run: npm ci --ignore-scripts && npm test
+      - name: Build browser
+        working-directory: frontend
+        run: npm ci --ignore-scripts && npm run build
+      - name: Run non-database Java checks
+        working-directory: backend
+        run: mvn -B test
+      - name: Retain Java reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: java-unit-reports
+          path: backend/target/surefire-reports/*.xml
+          retention-days: 14

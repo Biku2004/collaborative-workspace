@@ -48,8 +48,19 @@ test('packaged workspace survives an isolated database restore with content and 
       const capabilities = await owner.request.get('/api/capabilities');
       expect(capabilities.headers()['cache-control']).toContain('no-store');
       expect(await capabilities.json()).toEqual({ version: 1, documentFormats: ['PLAIN_TEXT_V1'] });
-      fixture.workspace = (await post(owner.request, '/api/workspaces', { name: 'Recovery workspace' })).id;
-      await post(owner.request, `/api/workspaces/${fixture.workspace}/members`, { email: fixture.viewer, role: 'VIEWER' }, 200);
+      const page = await owner.newPage(); await page.goto('/');
+      await expect(page.getByText('No workspaces yet.', { exact: true })).toBeVisible();
+      await page.getByLabel('New workspace', { exact: true }).fill('Recovery workspace');
+      await page.getByRole('button', { name: 'Create workspace', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Manage members', exact: true })).toBeVisible();
+      fixture.workspace = (await (await owner.request.get('/api/workspaces')).json())[0].id;
+      await page.getByRole('button', { name: 'Manage members', exact: true }).click();
+      const members = page.getByRole('region', { name: 'Workspace members', exact: true });
+      await members.getByLabel('Existing account email').fill(fixture.viewer);
+      await members.getByLabel('New member role').selectOption('VIEWER');
+      await members.getByRole('button', { name: 'Add or update member' }).click();
+      await expect(members.getByLabel(`Role for ${fixture.viewer}`, { exact: true })).toHaveValue('VIEWER');
+      await page.close();
       // Exercise the supported default packaged UI, including a lost response after server commit.
       const ui = await open(owner, fixture.owner, fixture);
       await expect(ui.page.getByLabel('Document format')).toBeEnabled();

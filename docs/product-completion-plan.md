@@ -5,7 +5,7 @@ The 37 local lessons are complete. Product completion follows the batches in [th
 | Batch | Scope | Current state |
 |---|---|---|
 | A | Supported default document creation and explicit format capabilities | Complete locally; verified 2026-11-16 |
-| B | Workspace creation, member management, document rename/archive UI | Next batch |
+| B | Workspace creation, member management, document rename/archive UI | Complete locally; verified 2026-11-16 |
 | C | Resolve and verify rich-text/history release gate, or explicit user-approved first-release scope | Required: user confirmed rich text must be included (2026-11-16) |
 | D | Reproducible combined workload and release test matrix | Pending; retain the observed contention failure |
 | E | Deployment/authentication/session/monitoring/backup operation for the chosen audience | Target confirmed: shared team/LAN deployment (2026-11-16) |
@@ -34,10 +34,24 @@ The final bundled JAR passed the three-phase native recovery/browser drill and l
 
 The React checklist review covered feature extraction, labelled controls, effect cancellation, unmount guards, user/workspace isolation and preservation of server authority. The initial synthetic search fixture needed a capabilities mock because its mocked identity was not a real server session; the corrected focused test passed. No schema change or gate enablement was made.
 
-## Batch B acceptance to implement next
+## Batch B acceptance
 
 - A stored user with no workspaces creates one through the UI and becomes its owner.
 - Owners can add existing accounts, list/paginate members, change roles and remove members. Last-owner conflicts are shown clearly and cannot be bypassed by UI state.
 - Editors can rename/archive with metadata versions; viewers cannot. Conflicts retain the user's proposed title until they deliberately reload current metadata.
 - Owner/editor/viewer/outsider browser journeys include collaboration, live role reduction, revoked access, stale metadata and last-owner denial.
 - Mutations use CSRF and existing backend authorization. New UI controls do not replace those checks or publish development-only provisioning as registration.
+
+## Batch B verification — 2026-11-16
+
+[Recorded results](reviews/2026-11-16-batch-b-results.json): the canonical 168 Java tests passed with no failures/errors/skips, including 24 development browser scenarios and three offline scenarios. A separate indexing-enabled run passed the management journey and two search scenarios. The management test additionally verifies editor archive and viewer archive denial. Redis-dependent multi-instance coverage remains excluded because this batch does not change the cluster protocol.
+
+A fresh stored account creates its workspace through the browser; a lost committed response is retried without a duplicate. The owner adds existing editors/viewers, pages through 22 members, sees unknown-account and last-owner errors, and can demote itself only after adding another owner. Editors rename/archive; stale rename proposals survive conflicts until deliberate reload. Live role reduction locks an editor, removal denies workspace/document/member reads, and retained text remains visible locally. UI controls disappear after self-demotion and direct unauthorized requests still fail.
+
+The rebuilt bundled JAR passed the native three-phase backup/restore/browser drill and launcher readiness check. Its seed now performs workspace creation and viewer membership setup through the actual UI. The expected attempt to restore over an existing target is rejected. All drill-owned processes stop afterward; the normal development database is untouched.
+
+The React checklist review covered labelled forms, narrow feature modules, abort/generation guards, unmount guards, retry identity and role/version authority. Mobile member pagination was visually checked at 390px with no horizontal overflow. No schema or stored-format change is required; rolling back the UI leaves existing authoritative APIs/data in place.
+
+## Deployment clarification
+
+The user delegated backup setup after explaining that the LAN choice meant multi-user sharing. The initial target stays one host on a shared home/office network, with browser clients. Batch E should install automatic encrypted local backups outside the checkout and verify recovery. No separate backup machine/share has been supplied: do not claim host-loss protection or verified off-machine storage until an independent destination exists.

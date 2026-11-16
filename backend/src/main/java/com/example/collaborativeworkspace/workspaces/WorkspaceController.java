@@ -39,4 +39,9 @@ public class WorkspaceController {
         return response.body(page.items());
     }
 
+    @GetMapping("/{workspaceId}")
+    public ResponseEntity<Workspace> get(@org.springframework.web.bind.annotation.PathVariable java.util.UUID workspaceId, Authentication authentication) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.get(workspaceId, authentication.getName()));
+    }
+
 }

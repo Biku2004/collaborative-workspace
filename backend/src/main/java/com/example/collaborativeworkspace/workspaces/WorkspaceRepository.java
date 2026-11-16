@@ -30,6 +30,10 @@ public class WorkspaceRepository {
     public boolean lockWorkspace(UUID workspaceId) {
         return !jdbc.query("SELECT id FROM workspaces WHERE id = ? FOR UPDATE", (rs, row) -> rs.getObject("id", UUID.class), workspaceId).isEmpty();
     }
+    public Optional<Workspace> findVisible(UUID workspaceId, UUID userId) {
+        return jdbc.query("SELECT w.id,w.name,w.created_at,m.role FROM workspaces w JOIN workspace_members m ON m.workspace_id=w.id WHERE w.id=? AND m.user_id=?",
+                (rs, row) -> new Workspace(rs.getObject("id", UUID.class), rs.getString("name"), rs.getTimestamp("created_at").toInstant(), rs.getString("role")), workspaceId, userId).stream().findFirst();
+    }
 
     public Optional<WorkspaceRole> memberRole(UUID workspaceId, UUID userId) {
         return jdbc.query("SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?",

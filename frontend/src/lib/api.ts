@@ -1,8 +1,9 @@
+import { ApiError, call, checked, csrf } from './http';
+export { ApiError } from './http';
 export type Workspace = { id: string; name: string; role: 'OWNER' | 'EDITOR' | 'VIEWER'; createdAt: string };
 export type Document = { id: string; workspaceId: string; title: string; createdAt: string; version: number; archived: boolean; collaborationFormat: string };
 export type Page<T> = { items: T[]; nextCursor: string | null };
 export type DocumentFormat = 'PLAIN_TEXT_V1' | 'RICH_TEXT_V1';
-type Csrf = { headerName: string; token: string };
 export type CurrentUser = { username: string; id?: string };
 export type Revision = { id: string; name: string; createdBy: string; epoch: number; throughSequence: number; format: string; createdAt: string };
 export type RevisionPreview = { revision: Revision; checkpoint: string; sha256: string };
@@ -11,29 +12,6 @@ export type RestoreRequest = { revisionId: string; requestId: string; expectedEp
 export type SearchMatch = { documentId: string; title: string; format: string; excerpt: string; epoch: number; throughSequence: number; head: number; indexedAt: string; stale: boolean };
 export type SearchResults = { items: SearchMatch[]; hasMore: boolean; coverage: { totalDocuments: number; currentDocuments: number; pendingDocuments: number }; indexingEnabled: boolean };
 
-export class ApiError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
-}
-
-async function call(path: string, init?: RequestInit): Promise<Response> {
-  let response: Response;
-  try { response = await fetch(path, { credentials: 'same-origin', ...init }); }
-  catch { throw new ApiError(0, 'Cannot reach the workspace service. Check that the backend is running.'); }
-  return response;
-}
-
-async function checked(path: string, init?: RequestInit): Promise<Response> {
-  const response = await call(path, init);
-  if (!response.ok) {
-    if (response.status === 401) throw new ApiError(401, 'Your session has ended. Please sign in again.');
-    if (response.status === 403) throw new ApiError(403, 'You do not have permission to access this resource.');
-    if (response.status === 404) throw new ApiError(404, 'This workspace is unavailable or you no longer have access.');
-    throw new ApiError(response.status, 'The request could not be completed. Please try again.');
-  }
-  return response;
-}
-
-async function csrf(): Promise<Csrf> { return (await checked('/api/csrf')).json() as Promise<Csrf>; }
 export async function currentUser(signal?: AbortSignal): Promise<CurrentUser> {
   return (await checked('/api/me', { signal })).json() as Promise<CurrentUser>;
 }

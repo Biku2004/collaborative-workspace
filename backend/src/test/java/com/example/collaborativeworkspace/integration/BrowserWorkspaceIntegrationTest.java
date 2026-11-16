@@ -90,6 +90,10 @@ class BrowserWorkspaceIntegrationTest {
         UUID aliceId = UUID.randomUUID(), bobId = UUID.randomUUID(), aliceWorkspace = null, bobWorkspace = null, sharedWorkspace = null;
         String alice = "browser-alice-" + aliceId + "@example.com", bob = "browser-bob-" + bobId + "@example.com";
         String aliceName = "Alice-" + aliceId, bobName = "Bob-" + bobId;
+        UUID managerId = UUID.randomUUID();
+        String manager = "browser-manager-" + managerId + "@example.com";
+        var extraUsers = new java.util.ArrayList<UUID>();
+        var extraEmails = new java.util.ArrayList<String>();
         Path frontend = Path.of("..", "frontend").toAbsolutePath().normalize();
         assertTrue(Files.isRegularFile(frontend.resolve("node_modules/vite/bin/vite.js")), "Run npm ci in frontend first");
         Path viteLog = Files.createTempFile("workspace-vite-", ".log");
@@ -97,6 +101,12 @@ class BrowserWorkspaceIntegrationTest {
         Process vite = null, browser = null;
         try {
             users.create(aliceId, alice, encoder.encode("browser-test-password")); users.create(bobId, bob, encoder.encode("browser-test-password"));
+            String managementPassword = encoder.encode("browser-test-password");
+            users.create(managerId, manager, managementPassword);
+            for (int i = 0; i < 19; i++) {
+                UUID id = UUID.randomUUID(); String email = "browser-member-" + id + "@example.com";
+                extraUsers.add(id); extraEmails.add(email); users.create(id, email, managementPassword);
+            }
             aliceWorkspace = workspaces.create(alice, aliceName).id(); bobWorkspace = workspaces.create(bob, bobName).id();
             String sharedName = "Shared-" + aliceId;
             sharedWorkspace = workspaces.create(alice, sharedName).id();
@@ -121,7 +131,7 @@ class BrowserWorkspaceIntegrationTest {
                 Thread.sleep(50);
             }
             assertTrue(ready, () -> "Vite failed to start:\n" + safeRead(viteLog));
-            var browserArgs = new java.util.ArrayList<>(java.util.List.of("node", "node_modules/@playwright/test/cli.js", "test", "a-reconnect.spec.ts", "a-rich-integration.spec.ts", "workspace.spec.ts", "creation.spec.ts", "editor.spec.ts", "local-document-store.spec.ts", "partial-sync.spec.ts", "rich-surface.spec.ts", "revisions.spec.ts", "restore.spec.ts", "--reporter=line"));
+            var browserArgs = new java.util.ArrayList<>(java.util.List.of("node", "node_modules/@playwright/test/cli.js", "test", "a-reconnect.spec.ts", "a-rich-integration.spec.ts", "workspace.spec.ts", "creation.spec.ts", "management.spec.ts", "editor.spec.ts", "local-document-store.spec.ts", "partial-sync.spec.ts", "rich-surface.spec.ts", "revisions.spec.ts", "restore.spec.ts", "--reporter=line"));
             if ("true".equals(System.getenv("WORKSPACE_RUN_SEARCH_BROWSER_TESTS"))) browserArgs.add("search.spec.ts");
             String browserGrep = System.getenv("WORKSPACE_BROWSER_TEST_GREP");
             if (browserGrep != null && !browserGrep.isBlank()) { browserArgs.add("--grep"); browserArgs.add(browserGrep); }
@@ -130,6 +140,8 @@ class BrowserWorkspaceIntegrationTest {
             var env = runner.environment();
             env.put("WORKSPACE_E2E_ORIGIN", "http://127.0.0.1:" + frontendPort);
             env.put("WORKSPACE_E2E_ALICE", alice); env.put("WORKSPACE_E2E_BOB", bob);
+            env.put("WORKSPACE_E2E_MANAGER", manager); env.put("WORKSPACE_E2E_MANAGER_ID", managerId.toString());
+            env.put("WORKSPACE_E2E_EXTRA_MEMBERS", String.join(",", extraEmails));
             env.put("WORKSPACE_E2E_ALICE_ID", aliceId.toString()); env.put("WORKSPACE_E2E_BOB_WORKSPACE", bobWorkspace.toString());
             env.put("WORKSPACE_E2E_ALICE_NAME", aliceName); env.put("WORKSPACE_E2E_BOB_NAME", bobName);
             env.put("WORKSPACE_E2E_BOB_ID", bobId.toString()); env.put("WORKSPACE_E2E_SHARED_NAME", sharedName);
@@ -168,10 +180,14 @@ class BrowserWorkspaceIntegrationTest {
         } finally {
             stopProcess(browser);
             stopProcess(vite);
+            jdbc.update("DELETE FROM documents WHERE workspace_id IN (SELECT id FROM workspaces WHERE created_by=?)", managerId);
+            jdbc.update("DELETE FROM workspaces WHERE created_by=?", managerId);
             if (aliceWorkspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", aliceWorkspace); jdbc.update("DELETE FROM workspaces WHERE id=?", aliceWorkspace); }
             if (bobWorkspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", bobWorkspace); jdbc.update("DELETE FROM workspaces WHERE id=?", bobWorkspace); }
             if (sharedWorkspace != null) { jdbc.update("DELETE FROM documents WHERE workspace_id=?", sharedWorkspace); jdbc.update("DELETE FROM workspaces WHERE id=?", sharedWorkspace); }
             jdbc.update("DELETE FROM app_users WHERE id IN (?, ?)", aliceId, bobId);
+            jdbc.update("DELETE FROM app_users WHERE id=?", managerId);
+            for (UUID id : extraUsers) jdbc.update("DELETE FROM app_users WHERE id=?", id);
             deleteLog(viteLog); deleteLog(browserLog);
         }
     }

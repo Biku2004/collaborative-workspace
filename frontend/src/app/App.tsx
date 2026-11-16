@@ -2,6 +2,9 @@ import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'rea
 import { ApiError, currentUser, documentPage, login, logout, workspacePage, type CurrentUser, type Document, type Workspace } from '../lib/api';
 import Editor from '../features/editor/Editor';
 import CreateDocumentForm from '../features/documents/CreateDocumentForm';
+import DocumentActions from '../features/documents/DocumentActions';
+import CreateWorkspaceForm from '../features/workspaces/CreateWorkspaceForm';
+import MembersPanel from '../features/workspaces/MembersPanel';
 const SearchPanel = lazy(() => import('../features/search/SearchPanel'));
 import { clearOfflineContext, readOfflineContext, saveOfflineContext, type OfflineContext } from '../features/offline/offlineContext';
 
@@ -21,6 +24,9 @@ export default function App() {
   const [workspaceCursor, setWorkspaceCursor] = useState<string | null>(null);
   const [workspaceError, setWorkspaceError] = useState('');
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [workspaceReload, setWorkspaceReload] = useState(0);
+  const [managementNotice, setManagementNotice] = useState('');
+  const [showMembers, setShowMembers] = useState(false);
   const [selected, setSelected] = useState<Workspace | null>(null);
   const [openDocument, setOpenDocument] = useState<Document | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -34,6 +40,7 @@ export default function App() {
 
   function endSession(message = '') {
     workspaceGeneration.current++; documentGeneration.current++;
+    setShowMembers(false); setManagementNotice('');
     setUser(null); setSelected(null); setOpenDocument(null); setWorkspaces([]); setDocuments([]);
     setWorkspaceCursor(null); setDocumentCursor(null); setLoginError(message);
     setWorkspaceLoading(false); setDocumentLoading(false);
@@ -69,7 +76,7 @@ export default function App() {
       if (generation === workspaceGeneration.current) handleFailure(error, setWorkspaceError);
     }).finally(() => { if (generation === workspaceGeneration.current) setWorkspaceLoading(false); });
     return () => { workspaceGeneration.current++; };
-  }, [user, offline]);
+  }, [user, offline, workspaceReload]);
 
   useEffect(() => {
     const generation = ++documentGeneration.current;
@@ -116,17 +123,34 @@ export default function App() {
   function mayLeaveEditor(): boolean { return !dirtyRef.current || window.confirm('Changes are awaiting server confirmation. Leaving may lose changes not yet saved locally. Continue?'); }
   function selectWorkspace(workspace: Workspace) {
     if (openDocument && !mayLeaveEditor()) return;
-    setOpenDocument(null); setEditorDirty(false);
+    setOpenDocument(null); setEditorDirty(false); setShowMembers(false); setManagementNotice('');
     if (selected?.id !== workspace.id) { documentGeneration.current++; setSelected(workspace); }
   }
   function closeDocument() { if (mayLeaveEditor()) { setOpenDocument(null); setEditorDirty(false); } }
+  function refreshWorkspaces() {
+    if (!mayLeaveEditor()) return;
+    setSelected(null); setOpenDocument(null); setEditorDirty(false); setShowMembers(false);
+    setWorkspaceReload(value => value + 1);
+  }
+  function managementDenied(error: ApiError) {
+    if (error.status === 401) { endSession(error.message); return; }
+    setManagementNotice(error.message); refreshWorkspaces();
+  }
+  function workspaceCreated(workspace: Workspace) {
+    workspaceGeneration.current++; setWorkspaceLoading(false); setWorkspaceError('');
+    setWorkspaces(old => [workspace, ...old.filter(item => item.id !== workspace.id)]);
+    setSelected(workspace); setOpenDocument(null); setEditorDirty(false); setShowMembers(false); setManagementNotice('');
+  }
+  function documentUpdated(document: Document) {
+    setDocuments(old => document.archived ? old.filter(item => item.id !== document.id) : old.map(item => item.id === document.id ? document : item));
+  }
   async function moreWorkspaces() {
     if (!workspaceCursor || workspaceLoading) return;
     const generation = workspaceGeneration.current;
     setWorkspaceLoading(true); setWorkspaceError('');
     try {
       const page = await workspacePage(workspaceCursor);
-      if (generation === workspaceGeneration.current) { setWorkspaces(old => [...old, ...page.items]); setWorkspaceCursor(page.nextCursor); }
+      if (generation === workspaceGeneration.current) { setWorkspaces(old => [...old, ...page.items.filter(item => !old.some(existing => existing.id === item.id))]); setWorkspaceCursor(page.nextCursor); }
     } catch (error) { if (generation === workspaceGeneration.current) handleFailure(error, setWorkspaceError); }
     finally { if (generation === workspaceGeneration.current) setWorkspaceLoading(false); }
   }
@@ -172,6 +196,10 @@ export default function App() {
       <div className="workspace-layout"><section className="sidebar" aria-labelledby="workspaces-heading"><div className="section-title"><h2 id="workspaces-heading">Workspaces</h2><span>01</span></div>
         <p className="muted small">Choose a workspace to see its documents.</p>
         {!offline && localDocument?.user.id === user.id && <button className="more" type="button" onClick={() => openOffline(localDocument)}>Open last local document</button>}
+        {!offline && user.id && !openDocument && <CreateWorkspaceForm key={user.id} onCreated={workspaceCreated}
+          onUnauthorized={() => endSession('Your session has ended. Please sign in again.')} />}
+        {!offline && <button className="more" type="button" onClick={refreshWorkspaces}>Refresh workspaces</button>}
+        {managementNotice && <p role="alert">{managementNotice}</p>}
         {workspaceError && <p className="alert" role="alert">{workspaceError}</p>}
         {workspaceLoading && workspaces.length === 0 && <p className="muted" role="status">Loading workspaces…</p>}
         {!workspaceLoading && !workspaceError && workspaces.length === 0 && <p className="empty-small">No workspaces yet.</p>}
@@ -181,6 +209,12 @@ export default function App() {
       {openDocument && selected && user.id && (openDocument.collaborationFormat === 'PLAIN_TEXT_V1' || openDocument.collaborationFormat === 'RICH_TEXT_V1') ? <Editor key={`${user.id}:${openDocument.id}`} userId={user.id} workspaceId={selected.id} documentId={openDocument.id} title={openDocument.title} format={openDocument.collaborationFormat} readOnly={selected.role === 'VIEWER'} onDirty={setEditorDirty} onBack={closeDocument} /> : <section className="documents" aria-labelledby="documents-heading"><div className="section-title"><div><p className="eyebrow">{selected ? selected.name : 'SELECT A WORKSPACE'}</p><h2 id="documents-heading">Documents</h2></div><span>02</span></div>
         {!selected && <div className="empty-state"><span className="empty-symbol" aria-hidden="true">✳</span><h3>Nothing selected yet.</h3><p>Choose a workspace on the left to browse its documents.</p></div>}
         {selected && <>
+          {!offline && selected.role === 'OWNER' && user.id && <>
+            <button type="button" className="more" aria-expanded={showMembers} onClick={() => setShowMembers(value => !value)}>Manage members</button>
+            {showMembers && <MembersPanel key={`${user.id}:${selected.id}`} workspaceId={selected.id} userId={user.id}
+              onSelfRole={role => { setSelected(current => current ? { ...current, role } : null); setWorkspaces(old => old.map(item => item.id === selected.id ? { ...item, role } : item)); }}
+              onSelfRemoved={refreshWorkspaces} onDenied={managementDenied} />}
+          </>}
           {!offline && <Suspense fallback={<p role="status">Loading search…</p>}><SearchPanel key={`${user.id}:${selected.id}`} workspaceId={selected.id} owner={selected.role === 'OWNER'} onOpen={document => {
             if (user.id) saveOfflineContext({ user: { username: user.username, id: user.id }, workspace: selected, document });
             setOpenDocument(document);
@@ -192,7 +226,7 @@ export default function App() {
           {documentError && <p className="alert" role="alert">{documentError}</p>}
           {documentLoading && documents.length === 0 && <p className="muted" role="status">Loading documents…</p>}
           {!documentLoading && !documentError && documents.length === 0 && <div className="empty-state compact"><span className="empty-symbol" aria-hidden="true">◇</span><h3>No documents yet.</h3><p>Documents shared in this workspace will appear here.</p></div>}
-          <ul className="document-list">{documents.map(document => <li key={document.id}><button type="button" className="document-button" onClick={() => { if (document.collaborationFormat !== 'PLAIN_TEXT_V1' && document.collaborationFormat !== 'RICH_TEXT_V1') { setDocumentError('This document format is not supported by this editor.'); return; } if (user.id) saveOfflineContext({ user: { username: user.username, id: user.id }, workspace: selected, document }); setOpenDocument(document); }}><span className="document-icon" aria-hidden="true">▤</span><span className="document-name"><strong>{document.title}</strong><small>Open document</small></span><time dateTime={document.createdAt}>{new Date(document.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</time></button></li>)}</ul>
+          <ul className="document-list">{documents.map(document => <li key={document.id}><button type="button" className="document-button" onClick={() => { if (document.collaborationFormat !== 'PLAIN_TEXT_V1' && document.collaborationFormat !== 'RICH_TEXT_V1') { setDocumentError('This document format is not supported by this editor.'); return; } if (user.id) saveOfflineContext({ user: { username: user.username, id: user.id }, workspace: selected, document }); setOpenDocument(document); }}><span className="document-icon" aria-hidden="true">▤</span><span className="document-name"><strong>{document.title}</strong><small>Open document</small></span><time dateTime={document.createdAt}>{new Date(document.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</time></button>{!offline && selected.role !== 'VIEWER' && <DocumentActions document={document} onUpdated={documentUpdated} onDenied={managementDenied} />}</li>)}</ul>
           {documentCursor && <button className="more" disabled={documentLoading} type="button" onClick={moreDocuments}>{documentLoading ? 'Loading…' : 'Load more documents'} <span aria-hidden="true">→</span></button>}
         </>}
       </section>}{dirty && <span className="sr-only">Unsaved changes</span>}</div>

@@ -1,0 +1,29 @@
+{
+  "recordedOn": "2026-11-16",
+  "batch": "B",
+  "javaRegression": { "tests": 168, "failures": 0, "errors": 0, "skipped": 0 },
+  "canonicalBrowserScenarios": 24,
+  "offlineBrowserScenarios": 3,
+  "indexingEnabledFocusedScenarios": 3,
+  "bundledRecoveryPhasesPassed": 3,
+  "packagedLauncherCheckPassed": true,
+  "jarSha256": "A8B37F485CAE72FEC5598489B7FE34E604A8522A2F8FC03215EE7020DA89C3F2",
+  "verified": [
+    "fresh stored account creates workspace through browser",
+    "retry after losing committed workspace response creates one workspace",
+    "unknown-account error retains current workspace",
+    "last owner cannot be demoted or removed",
+    "22 members paginate without duplicates and fit a 390px viewport",
+    "existing accounts added as editor and viewer through UI",
+    "editor renames and archives through UI; viewer metadata mutations denied",
+    "stale rename preserves proposal until deliberate reload",
+    "independent browser clients synchronize plain text",
+    "live demotion locks editor; removal denies document, workspace and member reads",
+    "retained local text remains visible after access is lost",
+    "self-demotion hides owner/editor controls and direct owner mutation remains denied",
+    "bundled workspace creation and viewer setup survive isolated backup/restore"
+  ],
+  "excluded": "Redis-dependent MultiInstanceIntegrationTest; cluster protocol unchanged",
+  "testCorrection": "The first focused run queried access before the asynchronous removal had completed. The assertion now waits for the member to disappear before checking revoked access; the corrected run passes.",
+  "rollback": "Revert management UI/client modules and additive workspace read endpoint; no schema migration or format conversion."
+}

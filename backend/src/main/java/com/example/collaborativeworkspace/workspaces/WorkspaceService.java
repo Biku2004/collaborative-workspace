@@ -39,6 +39,11 @@ public class WorkspaceService {
     }
 
     @Transactional(readOnly = true)
+    public Workspace get(UUID workspaceId, String email) {
+        return workspaces.findVisible(workspaceId, userId(email)).orElseThrow(WorkspaceResourceNotFoundException::new);
+    }
+
+    @Transactional(readOnly = true)
     public List<Workspace> list(String authenticatedEmail) {
         return list(authenticatedEmail, 20, null).items();
     }

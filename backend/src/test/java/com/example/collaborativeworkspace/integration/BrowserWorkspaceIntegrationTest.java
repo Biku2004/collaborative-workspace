@@ -141,7 +141,9 @@ class BrowserWorkspaceIntegrationTest {
             assertTrue(browser.waitFor(360, TimeUnit.SECONDS), "Browser verification timed out");
             assertEquals(0, browser.exitValue(), () -> "Browser verification failed:\n" + safeRead(browserLog));
             safeRead(browserLog).lines().filter(line -> line.startsWith("STRUCTURAL_EDIT_MEASUREMENT ")).forEach(System.out::println);
-            if (engine != null) {
+            // Offline-shell scenarios depend on the full dev group having created its rich fixture.
+            // A deliberately filtered run verifies only its selected scenarios.
+            if (engine != null && (browserGrep == null || browserGrep.isBlank())) {
                 // The preceding revocation scenario removes Bob; restore him for account-isolation coverage.
                 membership.setRole(sharedWorkspace, alice, new ChangeWorkspaceMemberRequest(bob, WorkspaceRole.EDITOR));
                 assertTrue(Files.isRegularFile(frontend.resolve("dist/sw.js")), "Build the frontend before offline browser verification");

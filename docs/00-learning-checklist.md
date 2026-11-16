@@ -29,9 +29,9 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 
 - [x] **Lesson 16 — Rename and archive documents.** See [Lesson 16](lessons/16-rename-and-archive-documents.md). Owner/editor mutations use metadata versions and archived documents are omitted from ordinary lists.
 
-- [ ] Expand authentication and sessions in later lessons.
-- [ ] Add workspaces and member roles; test that users cannot access another workspace.
-- [ ] Associate documents with workspaces and enforce permissions.
+- [x] Expand authentication and sessions: stored-user login and development sessions are verified in Lessons 10–11.
+- [x] Add workspaces and member roles; cross-workspace denial is verified in Lessons 12–13 and later integration tests.
+- [x] Associate documents with workspaces and enforce permissions, verified in Lessons 14–16.
 - [x] **Lesson 17 — Two local Yjs replicas.** See [Lesson 17](lessons/17-yjs-two-local-replicas.md). Concurrent changes, reordering, duplicate delivery, deletions and state vectors are tested.
 - [x] **Lesson 18 — Prototype a private Yjs document engine.** See [Lesson 18](lessons/18-private-yjs-engine.md). Candidate reconstruction and initial byte transport are tested; the full provider compatibility gate remains open.
 - [x] **Lesson 19 — Authenticate a WebSocket.** See [Lesson 19](lessons/19-authenticate-websocket.md). Session, Origin and workspace membership protect a minimal greeting; rooms and edits remain future work.
@@ -52,6 +52,6 @@ The detailed numbered sequence, beginning with Lesson 8, is in the [next lessons
 - [x] **Lesson 34 — Monitoring and debugging.** See [Lesson 34](lessons/34-monitoring-and-debugging.md). Correlated edit traces, redacted logs, protected metrics, lag snapshots and proposed alerts are verified.
 - [x] **Lesson 35 — Multi-instance communication.** See [Lesson 35](lessons/35-multi-instance-collaboration.md). Two backend instances exchange signed Redis hints and presence; browser tests verify missed-message repair, duplicate safety, saved edits during broker outages and lost-hint permission enforcement.
 - [x] **Lesson 36 — Overload and recovery experiments.** See [Lesson 36](lessons/36-overload-and-recovery.md). Atomic room caps, native transport deadlines and fair sender scheduling are checked alongside actual-browser overload recovery and a measured 16-peer workload.
-- [ ] **Lesson 37 — Backup, restore and local deployment.**
+- [x] **Lesson 37 — Backup, restore and local deployment.** See [Lesson 37](lessons/37-backup-restore-and-local-deployment.md). Bundled local launch, guarded dumps and isolated restore verify content, revisions, credentials and permissions; measurements and rollback limits are recorded.
 
 The [full roadmap](03-implementation-roadmap.md) gives the dependencies, acceptance tests and later scaling milestones. We will check whether each new service is already available and use Docker for missing services as needed. We will not use Docker for your regular local PostgreSQL development database.

@@ -1,0 +1,33 @@
+{
+  "recordedUtc": "2026-11-16T15:04:53.8672122Z",
+  "backupSeconds": 0.4268606,
+  "jarSha256": "504029AB9F4FE8F41E3776BC6DB670519AEFD43ED0B1F33606A6ECB8B1344D47",
+  "browserPhases": [
+    "seed",
+    "advance",
+    "verify"
+  ],
+  "existingDatabaseRefusedWithoutChanges": true,
+  "packagedLauncherCheckPassed": true,
+  "sourceDevelopmentDatabaseModified": false,
+  "isolatedNativePostgres": true,
+  "archiveBytes": 38445,
+  "restoreSeconds": 2.6215231,
+  "restoreToVerifiedApplicationSeconds": 19.5880334,
+  "guardChecksPassed": 4,
+  "verification": {
+    "latestJavaReportsAcrossSuiteAndFocusedRuns": {
+      "tests": 169,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "engineTestsPassed": 31,
+    "canonicalBrowserGroup": "21 dev scenarios and 3 production offline scenarios passed",
+    "searchBrowserGroup": "2 focused search scenarios passed",
+    "initialCombinedRun": "169 cases; one browser wrapper failed gated rich structural workload with indexing/concurrent recovery. Retained as a limitation; isolated canonical rerun passed all 80 edits.",
+    "recoveryBrowserPhases": 3,
+    "launcherSmokeCheck": "passed",
+    "scriptGuardsPassed": 4
+  }
+}

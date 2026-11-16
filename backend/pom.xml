@@ -56,4 +56,14 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <profile>
+            <id>bundled-ui</id>
+            <build><resources>
+                <resource><directory>src/main/resources</directory></resource>
+                <resource><directory>${project.basedir}/../packages/rich-text-schema-v1</directory><targetPath>contracts/rich-text-v1</targetPath><includes><include>contract.json</include></includes></resource>
+                <resource><directory>${project.basedir}/../frontend/dist</directory><targetPath>static</targetPath></resource>
+            </resources></build>
+        </profile>
+    </profiles>
 </project>

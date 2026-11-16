@@ -235,7 +235,9 @@ Implementation, measured workload, recovery experiments and limits: [Lesson 36](
 - **Verify:** A slow client is disconnected without unbounded memory growth and can resynchronize; document measured workloads and limitations.
 - **Interview practice:** What would you measure before choosing WebFlux or partitioning a hot room?
 
-### Lesson 37 — Backup, restore and deploy locally
+### Lesson 37 — Backup, restore and deploy locally (complete locally)
+
+Implementation, deployment commands and measured recovery drill: [Lesson 37](lessons/37-backup-restore-and-local-deployment.md).
 
 - **Build:** Document and practice database backup/restoration, application configuration and containerized deployment where useful. Keep the existing PostgreSQL development setup intact.
 - **Learn:** Recovery point/time objectives, secret handling, schema compatibility and rollback.
@@ -248,4 +250,4 @@ Comments, mentions, exports, object storage, Kafka and explicit room ownership a
 
 ## Next lesson
 
-Continue with **Lesson 37: backup, restore and local deployment**. Overload/recovery evidence and limitations are described in [Lesson 36](lessons/36-overload-and-recovery.md).
+The planned Lessons 1–37 are complete as local learning milestones. Review [Lesson 37](lessons/37-backup-restore-and-local-deployment.md) for deployment and recovery. Production hardening, the gated rich-text limitations and the optional extensions above remain separate work.

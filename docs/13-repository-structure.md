@@ -60,3 +60,5 @@ Lesson 34 diagnostics live in `observability`; proposed monitoring rules live in
 Lesson 35 inter-instance transport lives in `collaboration/cluster`; local Redis setup lives in `ops/redis`. See [two backend instances](lessons/35-multi-instance-collaboration.md).
 
 Lesson 36 queue scheduling and native transport limits live in `collaboration/transport`. The overload browser fixture and paced workload are test-only; measurements are recorded in `ops/load`. See [overload and recovery](lessons/36-overload-and-recovery.md).
+
+Lesson 37 native deployment helpers live in `ops/deploy`; guarded backup/restore and the isolated drill live in `ops/recovery`. `frontend/test/recovery-drill.spec.ts` verifies the bundled JAR rather than a Vite proxy. Private archives, settings and drill database files stay under ignored `backend/target`.

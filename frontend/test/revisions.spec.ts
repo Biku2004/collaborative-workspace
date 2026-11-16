@@ -20,7 +20,8 @@ test('named rich revisions preserve their preview after later live edits', async
   await page.getByLabel('Password').fill('browser-test-password');
   await page.getByRole('button', { name: /Continue/ }).click();
   await page.getByRole('button', { name: new RegExp(process.env.WORKSPACE_E2E_SHARED_NAME!) }).click();
-  await page.getByLabel('New rich-text document').fill('Revision notes');
+  await page.getByLabel('Document format').selectOption('RICH_TEXT_V1');
+  await page.getByLabel('New document', { exact: true }).fill('Revision notes');
   await page.getByRole('button', { name: 'Create document', exact: true }).click();
   await page.getByRole('button', { name: /Revision notes/ }).click();
   const live = page.getByRole('textbox', { name: 'Document text' });

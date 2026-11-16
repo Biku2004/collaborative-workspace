@@ -13,7 +13,8 @@ test('restored rich epochs quarantine offline drafts and allow deliberate manual
   }
   try {
     const a = await login(alice, process.env.WORKSPACE_E2E_ALICE!);
-    await a.getByLabel('New rich-text document').fill('Restore notes');
+    await a.getByLabel('Document format').selectOption('RICH_TEXT_V1');
+    await a.getByLabel('New document', { exact: true }).fill('Restore notes');
     await a.getByRole('button', { name: 'Create document', exact: true }).click();
     await a.getByRole('button', { name: /Restore notes/ }).click();
     const liveA = a.locator('.editor > .rich-editor [role="textbox"]');

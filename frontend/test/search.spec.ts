@@ -15,7 +15,8 @@ test('scheduled search indexes committed text, opens results, rebuilds and rejec
   try {
     const a = await signIn(alice, process.env.WORKSPACE_E2E_ALICE!);
     await a.getByRole('button', { name: new RegExp(process.env.WORKSPACE_E2E_ALICE_NAME!) }).click();
-    await a.getByLabel('New rich-text document').fill('Searchable notes');
+    await a.getByLabel('Document format').selectOption('RICH_TEXT_V1');
+    await a.getByLabel('New document', { exact: true }).fill('Searchable notes');
     const [response] = await Promise.all([a.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith('/documents')), a.getByRole('button', { name: 'Create document', exact: true }).click()]);
     const document = await response.json() as { id: string; workspaceId: string };
     await a.getByRole('button', { name: /Searchable notes/ }).click();
@@ -49,6 +50,7 @@ test('scheduled search indexes committed text, opens results, rebuilds and rejec
 test('search renders stale and paused results as text and clears them on denial', async ({ page }) => {
   const workspace = '20000000-0000-4000-8000-000000000081', user = '10000000-0000-4000-8000-000000000081';
   await page.route('**/api/me', r => r.fulfill({ json: { id: user, username: 'fixture@example.com' } }));
+  await page.route('**/api/capabilities', r => r.fulfill({ json: { version: 1, documentFormats: ['PLAIN_TEXT_V1'] } }));
   await page.route('**/api/workspaces', r => r.fulfill({ json: [{ id: workspace, name: 'Search fixture', role: 'OWNER' }] }));
   await page.route('**/documents', r => r.fulfill({ json: { items: [], nextCursor: null } }));
   let denied = false;

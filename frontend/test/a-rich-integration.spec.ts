@@ -58,7 +58,8 @@ test('rich editors synchronize, recover offline edits, and enforce viewer writes
     });
     await a.getByRole('button', { name: new RegExp(process.env.WORKSPACE_E2E_SHARED_NAME!) }).click();
     await captured;
-    await a.getByLabel('New rich-text document').fill('Rich notes');
+    await a.getByLabel('Document format').selectOption('RICH_TEXT_V1');
+    await a.getByLabel('New document', { exact: true }).fill('Rich notes');
     const [creation] = await Promise.all([
       a.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/documents')),
       a.getByRole('button', { name: 'Create document' }).click(),
@@ -229,7 +230,8 @@ test('measures repeated structural edits and restores the larger checkpoint', as
     await page.getByLabel('Password').fill('browser-test-password');
     await page.getByRole('button', { name: /Continue/ }).click();
     await page.getByRole('button', { name: new RegExp(process.env.WORKSPACE_E2E_SHARED_NAME!) }).click();
-    await page.getByLabel('New rich-text document').fill('Capacity notes');
+    await page.getByLabel('Document format').selectOption('RICH_TEXT_V1');
+    await page.getByLabel('New document', { exact: true }).fill('Capacity notes');
     await page.getByRole('button', { name: 'Create document' }).click();
     await page.getByRole('button', { name: /Capacity notes/ }).click();
     const editor = page.getByRole('textbox', { name: 'Document text' });

@@ -1,4 +1,4 @@
-# API endpoint reference through Lesson 34
+# Current API endpoint reference
 
 This table describes the currently implemented routes, not the planned collaboration API. The `dev` profile is a local-only learning setup. Stored users can log in; document operations are restricted by workspace membership. Archived documents are readable by direct link but omitted from normal lists.
 
@@ -13,6 +13,7 @@ JSON request bodies use exact field types and names. Unknown or duplicate fields
 | GET | `/api/csrf` | Obtain a CSRF token for the current session | Public, `dev` only | Returns 200 with `headerName`, `parameterName`, and `token`; response is marked `no-store`. |
 | GET | `/login` | Display Spring Security's login form | Public, `dev` only | HTML login form with a CSRF token. |
 | POST | `/login` | Authenticate a stored user or temporary `learner` bootstrap account | Public, `dev` only; CSRF required | Form fields `username`, `password`, and CSRF token. Success normally returns a redirect and session cookie; failure redirects to a login error. |
+| GET | `/api/capabilities` | Discover supported document formats | Stored-user session, `dev` only | `{"version":1,"documentFormats":["PLAIN_TEXT_V1"]}` by default; includes `RICH_TEXT_V1` only when enabled. `no-store`; discovery never replaces server-side format checks. |
 | GET | `/api/me` | Show the current session identity | Authenticated session, `dev` only | Returns 200 with `username` and the stable stored-user `id` when available; the development bootstrap principal has no stored ID. Identity comes from the authenticated session; the response is `no-store`. |
 | POST | `/api/workspaces` | Create a workspace and its owner membership | Stored-user session and CSRF token, `dev` only | JSON `{ "name": "Product team" }`; returns 201 with workspace fields and `role: OWNER`. |
 | GET | `/api/workspaces` | List the current user's workspace memberships | Stored-user session, `dev` only | Returns 200 and an array scoped to the signed-in user; `limit` is 1–100 (default 20), `after` is a UUID cursor, and `X-Next-Cursor` provides the next position. |

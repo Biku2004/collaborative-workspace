@@ -121,7 +121,7 @@ class BrowserWorkspaceIntegrationTest {
                 Thread.sleep(50);
             }
             assertTrue(ready, () -> "Vite failed to start:\n" + safeRead(viteLog));
-            var browserArgs = new java.util.ArrayList<>(java.util.List.of("node", "node_modules/@playwright/test/cli.js", "test", "a-reconnect.spec.ts", "a-rich-integration.spec.ts", "workspace.spec.ts", "editor.spec.ts", "local-document-store.spec.ts", "partial-sync.spec.ts", "rich-surface.spec.ts", "revisions.spec.ts", "restore.spec.ts", "--reporter=line"));
+            var browserArgs = new java.util.ArrayList<>(java.util.List.of("node", "node_modules/@playwright/test/cli.js", "test", "a-reconnect.spec.ts", "a-rich-integration.spec.ts", "workspace.spec.ts", "creation.spec.ts", "editor.spec.ts", "local-document-store.spec.ts", "partial-sync.spec.ts", "rich-surface.spec.ts", "revisions.spec.ts", "restore.spec.ts", "--reporter=line"));
             if ("true".equals(System.getenv("WORKSPACE_RUN_SEARCH_BROWSER_TESTS"))) browserArgs.add("search.spec.ts");
             String browserGrep = System.getenv("WORKSPACE_BROWSER_TEST_GREP");
             if (browserGrep != null && !browserGrep.isBlank()) { browserArgs.add("--grep"); browserArgs.add(browserGrep); }

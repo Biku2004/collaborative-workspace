@@ -47,6 +47,7 @@ public class SecurityConfiguration {
                 if (localUiEnabled) auth.requestMatchers(HttpMethod.GET, "/", "/index.html", "/assets/**", "/sw.js").permitAll();
                 auth
                     .requestMatchers(HttpMethod.GET, "/api/status", "/api/csrf").permitAll()
+                    .requestMatchers("/api/capabilities").hasRole("USER")
                     .requestMatchers("/actuator", "/actuator/**").hasRole("BOOTSTRAP")
                     .requestMatchers("/api/dev/users", "/api/dev/users/**").hasRole("BOOTSTRAP")
                     .requestMatchers("/api/workspaces", "/api/workspaces/**").hasRole("USER")

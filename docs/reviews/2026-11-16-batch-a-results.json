@@ -1,0 +1,36 @@
+{
+  "recordedOn": "2026-11-16",
+  "batch": "A",
+  "defaultFormat": "PLAIN_TEXT_V1",
+  "richGateRemainsOffInDefaultLauncher": true,
+  "javaRegression": {
+    "tests": 168,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "excludedIntegration": "Redis-dependent MultiInstanceIntegrationTest; no cluster protocol change in batch A",
+  "canonicalBrowserScenarios": 23,
+  "offlineBrowserScenarios": 3,
+  "bundledRecoveryPhasesPassed": 3,
+  "jarSha256": "6B8585E4ABCBA8C8F2C078B7F657CCCAF564C81E94FF83C00815ED1E05BA6D06",
+  "packagedLauncherCheckPassed": true,
+  "testedDefaultCreation": [
+    "capabilities require a session and are no-store",
+    "rich option disabled when server gate is off",
+    "plain text created via packaged browser form",
+    "same-key retry after response lost following commit creates one document",
+    "second member can read",
+    "viewer create control hidden and valid-CSRF create returns 403",
+    "direct owner rich creation returns 400 while gate is off"
+  ],
+  "testedClientBoundaries": [
+    "invalid capabilities fail closed and retry recovers",
+    "whitespace title reports validation error",
+    "same title and format reuse retry key",
+    "format change generates a different retry key"
+  ],
+  "reactReview": "component extraction, labelled controls, effect cancellation, unmount guards and user/workspace isolation reviewed",
+  "focusedSearchBrowserScenariosPassed": 2,
+  "testFixtureAdjustment": "The isolated search UI fixture now mocks its authenticated capabilities contract alongside its mocked session."
+}

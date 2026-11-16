@@ -1,6 +1,7 @@
 export type Workspace = { id: string; name: string; role: 'OWNER' | 'EDITOR' | 'VIEWER'; createdAt: string };
 export type Document = { id: string; workspaceId: string; title: string; createdAt: string; version: number; archived: boolean; collaborationFormat: string };
 export type Page<T> = { items: T[]; nextCursor: string | null };
+export type DocumentFormat = 'PLAIN_TEXT_V1' | 'RICH_TEXT_V1';
 type Csrf = { headerName: string; token: string };
 export type CurrentUser = { username: string; id?: string };
 export type Revision = { id: string; name: string; createdBy: string; epoch: number; throughSequence: number; format: string; createdAt: string };
@@ -61,11 +62,22 @@ export async function documentPage(workspaceId: string, cursor?: string): Promis
   return (await checked(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents${suffix}`)).json() as Promise<Page<Document>>;
 }
 
-export async function createRichDocument(workspaceId: string, title: string, requestKey: string): Promise<Document> {
+export async function documentFormats(signal?: AbortSignal): Promise<DocumentFormat[]> {
+  const value: unknown = await (await checked('/api/capabilities', { signal, cache: 'no-store' })).json();
+  if (!value || typeof value !== 'object') throw new ApiError(0, 'Invalid document capabilities.');
+  const capabilities = value as { version?: unknown; documentFormats?: unknown };
+  const formats = capabilities.documentFormats;
+  if (capabilities.version !== 1 || !Array.isArray(formats) || formats.length > 2 ||
+      !formats.includes('PLAIN_TEXT_V1') || new Set(formats).size !== formats.length ||
+      formats.some(format => format !== 'PLAIN_TEXT_V1' && format !== 'RICH_TEXT_V1'))
+    throw new ApiError(0, 'Invalid document capabilities.');
+  return formats as DocumentFormat[];
+}
+export async function createDocument(workspaceId: string, title: string, requestKey: string, format: DocumentFormat): Promise<Document> {
   const token = await csrf();
   const response = await checked(`/api/workspaces/${encodeURIComponent(workspaceId)}/documents`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey, [token.headerName]: token.token },
-    body: JSON.stringify({ title, format: 'RICH_TEXT_V1' }),
+    body: JSON.stringify({ title, format }),
   });
   return response.json() as Promise<Document>;
 }

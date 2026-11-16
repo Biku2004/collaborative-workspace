@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
-import { ApiError, createRichDocument, currentUser, documentPage, login, logout, workspacePage, type CurrentUser, type Document, type Workspace } from '../lib/api';
+import { ApiError, currentUser, documentPage, login, logout, workspacePage, type CurrentUser, type Document, type Workspace } from '../lib/api';
 import Editor from '../features/editor/Editor';
+import CreateDocumentForm from '../features/documents/CreateDocumentForm';
 const SearchPanel = lazy(() => import('../features/search/SearchPanel'));
 import { clearOfflineContext, readOfflineContext, saveOfflineContext, type OfflineContext } from '../features/offline/offlineContext';
 
@@ -28,10 +29,6 @@ export default function App() {
   const [documentCursor, setDocumentCursor] = useState<string | null>(null);
   const [documentError, setDocumentError] = useState('');
   const [documentLoading, setDocumentLoading] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState('');
-  const createAttempt = useRef<{ workspace: string; title: string; key: string } | null>(null);
   const workspaceGeneration = useRef(0);
   const documentGeneration = useRef(0);
 
@@ -147,29 +144,6 @@ export default function App() {
     finally { if (generation === documentGeneration.current) setDocumentLoading(false); }
   }
 
-  async function createDocument(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selected || selected.role === 'VIEWER' || creating) return;
-    const title = newTitle.trim();
-    if (!title) return;
-    const workspace = selected.id, generation = documentGeneration.current;
-    if (!createAttempt.current || createAttempt.current.workspace !== workspace || createAttempt.current.title !== title)
-      createAttempt.current = { workspace, title, key: crypto.randomUUID() };
-    setCreating(true); setCreateError('');
-    try {
-      const document = await createRichDocument(workspace, title, createAttempt.current.key);
-      createAttempt.current = null;
-      if (generation !== documentGeneration.current) return;
-      setNewTitle('');
-      setDocuments(old => [document, ...old.filter(item => item.id !== document.id)]);
-    } catch (error) {
-      if (generation === documentGeneration.current) {
-        if (error instanceof ApiError && error.status === 400) setCreateError('Could not create the document. Check its title and whether rich text is enabled on the server.');
-        else handleFailure(error, setCreateError);
-      }
-    } finally { setCreating(false); }
-  }
-
   if (user === undefined) return <main className="center"><p role="status">Checking your session…</p></main>;
   if (!user) return <main className="login-shell">
     <section className="login-intro" aria-labelledby="login-heading">
@@ -211,12 +185,9 @@ export default function App() {
             if (user.id) saveOfflineContext({ user: { username: user.username, id: user.id }, workspace: selected, document });
             setOpenDocument(document);
           }} /></Suspense>}
-          {!offline && selected.role !== 'VIEWER' && <form className="create-document" onSubmit={createDocument}>
-            <label htmlFor="new-document-title">New rich-text document</label>
-            <div><input id="new-document-title" value={newTitle} onChange={event => setNewTitle(event.target.value)} maxLength={200} required />
-              <button type="submit" disabled={creating}>{creating ? 'Creating…' : 'Create document'}</button></div>
-            {createError && <p className="alert" role="alert">{createError}</p>}
-          </form>}
+          {!offline && selected.role !== 'VIEWER' && <CreateDocumentForm key={`${user.id}:${selected.id}`} workspaceId={selected.id}
+            onCreated={document => setDocuments(old => [document, ...old.filter(item => item.id !== document.id)])}
+            onUnauthorized={() => endSession('Your session has ended. Please sign in again.')} />}
           <div className="list-heading"><span>DOCUMENT NAME</span><span>CREATED</span></div>
           {documentError && <p className="alert" role="alert">{documentError}</p>}
           {documentLoading && documents.length === 0 && <p className="muted" role="status">Loading documents…</p>}
